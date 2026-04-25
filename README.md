@@ -33,6 +33,14 @@ pip install -r requirements.txt
 
 The first request triggers schema creation and seed data (5 sample assets + 1 scenario) into a SQLite file at `/tmp/capex_opex_demo.db`. No credentials required.
 
+> **Running against your own PostgreSQL 17 on `localhost:5433`?**
+> Follow the step-by-step guide at
+> [`docs/local-deployment-postgresql17.pplx.md`](docs/local-deployment-postgresql17.pplx.md).
+> It covers creating the database and user, applying `db/001_init.sql`,
+> configuring `backend/.env` from `backend/.env.local.example`, and using
+> the cross-platform helper scripts in [`scripts/`](scripts/) to launch the
+> backend and frontend on Windows, macOS, and Linux.
+
 **Frontend** (Node ≥ 18):
 
 ```bash
