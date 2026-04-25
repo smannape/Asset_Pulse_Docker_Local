@@ -109,8 +109,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <Logo size={22} />
-          <span>Asset Pulse</span>
+          <Logo height={26} />
+          <span className="brand-name sr-only">Asset Pulse</span>
           <span className="v">v0.1 · forecasting decision terminal</span>
         </div>
         <div className="spacer" />
