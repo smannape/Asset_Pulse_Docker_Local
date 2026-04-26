@@ -9,6 +9,7 @@ import { Logo } from "./components/Logo";
 import { MonteCarlo } from "./components/MonteCarlo";
 import { Panel } from "./components/Panel";
 import { ReportConsole } from "./components/ReportConsole";
+import { ScenarioCompare } from "./components/ScenarioCompare";
 import { ScenarioForm, DEFAULT_INPUTS } from "./components/ScenarioForm";
 import { Tornado } from "./components/Tornado";
 import {
@@ -20,7 +21,14 @@ import {
   type ScenarioResult,
 } from "./lib/api";
 
-type View = "scenario" | "sensitivity" | "events" | "matrix" | "assets" | "exchange";
+type View =
+  | "scenario"
+  | "sensitivity"
+  | "events"
+  | "matrix"
+  | "assets"
+  | "compare"
+  | "exchange";
 type Theme = "light" | "dark";
 
 export default function App() {
@@ -32,19 +40,35 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [health, setHealth] = useState<{ status: string; database: string } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [assetsLoading, setAssetsLoading] = useState(false);
 
   // Push theme to <html data-theme="...">
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
+  const refreshAssets = useCallback(async () => {
+    setAssetsLoading(true);
+    try {
+      const a = await apiGet<Asset[]>("/api/assets");
+      setAssets(a);
+    } catch {
+      // keep prior list — refresh is best-effort
+    } finally {
+      setAssetsLoading(false);
+    }
+  }, []);
+
   // Load assets + health on mount
   useEffect(() => {
-    apiGet<Asset[]>("/api/assets").then(setAssets).catch(() => setAssets([]));
+    void refreshAssets();
     apiGet<{ status: string; database: string }>("/api/health")
       .then(setHealth)
       .catch(() => setHealth(null));
-  }, []);
+  }, [refreshAssets]);
+
+  const bumpRefreshKey = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const runScenario = useCallback(async () => {
     setRunning(true);
@@ -52,12 +76,15 @@ export default function App() {
     try {
       const r = await apiPost<ScenarioResult>("/api/scenario/run", inputs);
       setResult(r);
+      // Persist + sibling tabs need to see the new row.
+      bumpRefreshKey();
+      void refreshAssets();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
     }
-  }, [inputs]);
+  }, [inputs, bumpRefreshKey, refreshAssets]);
 
   // When user picks an asset profile, hydrate inputs from cost profile.
   // Use functional setInputs so the callback identity doesn't change with every
@@ -106,7 +133,8 @@ export default function App() {
     { id: "events", label: "Events", key: "03" },
     { id: "matrix", label: "Decision Matrix", key: "04" },
     { id: "assets", label: "Assets", key: "05" },
-    { id: "exchange", label: "CSV Exchange", key: "06" },
+    { id: "compare", label: "Scenario Compare", key: "06" },
+    { id: "exchange", label: "CSV Exchange", key: "07" },
   ];
 
   return (
@@ -254,13 +282,44 @@ export default function App() {
         )}
 
         {view === "assets" && (
-          <Panel title="Asset registry" meta={<span className="muted">{assets.length} loaded</span>}>
+          <Panel
+            title="Asset registry"
+            meta={<span className="muted">{assets.length} loaded</span>}
+          >
+            <div
+              className="row"
+              style={{ marginBottom: 10, gap: 10, flexWrap: "wrap" }}
+            >
+              <button
+                className="primary"
+                onClick={() => void refreshAssets()}
+                disabled={assetsLoading}
+                title="Reload assets and any new scenario-derived cases"
+              >
+                {assetsLoading ? "Refreshing..." : "Refresh cases"}
+              </button>
+              <span className="muted" style={{ fontSize: 11 }}>
+                Cases also refresh automatically after a scenario run or CSV save.
+              </span>
+            </div>
             <AssetTable
               assets={assets}
               onSelect={(a) => {
                 onLoadAsset(a.id);
                 setView("scenario");
               }}
+            />
+          </Panel>
+        )}
+
+        {view === "compare" && (
+          <Panel
+            title="Scenario compare"
+            meta={<span className="muted">Saved runs · NPV · breakeven · payback</span>}
+          >
+            <ScenarioCompare
+              refreshKey={refreshKey}
+              onScenarioDeleted={() => bumpRefreshKey()}
             />
           </Panel>
         )}
@@ -277,6 +336,10 @@ export default function App() {
                 setInputs(next);
                 setResult(null);
                 setView("scenario");
+              }}
+              onScenariosSaved={() => {
+                bumpRefreshKey();
+                void refreshAssets();
               }}
               result={result}
               assets={assets}

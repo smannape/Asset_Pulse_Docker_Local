@@ -27,8 +27,9 @@ The top navigation switches between the main work areas:
 | Sensitivity | Run tornado sensitivity and Monte Carlo uncertainty. |
 | Events | Apply event impacts to a base NPV case. |
 | Decision Matrix | Rank assets for keep-online, choke-back, shut-in or restart decisions. |
-| Assets | View seeded wells, pipelines, gathering systems and facilities. |
-| CSV Exchange | Export/import assumptions and outputs. |
+| Assets | View seeded wells, pipelines, gathering systems and facilities. Includes a Refresh cases button. |
+| Scenario Compare | Compare every saved scenario by NPV, breakeven oil, payback and EUR. |
+| CSV Exchange | Export/import assumptions and outputs. Approve/save imported rows to the database. |
 
 ### Left Command Rail
 
@@ -242,7 +243,42 @@ The Assets view lists seeded sample assets:
 
 Click `load` to push an asset profile into the Scenario form.
 
+### Refresh Cases
+
+The view also exposes a **Refresh cases** button. Use it when CSV imports or
+scenario runs in another tab created new cases that are not yet visible. The
+app also auto-refreshes the asset list whenever a scenario is run or saved
+through CSV Exchange — Refresh cases is the manual fallback if the
+auto-refresh missed a change because of a network blip.
+
 In production, replace the seeded sample data with your actual AFE, LOE, production, water, facility and midstream data.
+
+## Scenario Compare View
+
+The Scenario Compare view is a portfolio-level table and chart of every saved
+scenario in the database. It loads from `GET /api/scenarios?limit=100` and
+shows:
+
+- Scenario name and asset alias (e.g. `asset1`, `asset2`).
+- Fiscal regime and source (`api`, `csv_import`, `manual`).
+- NPV (positive in green, negative in red), PV-10 and payback.
+- **Breakeven oil price** — the bisection-derived USD/bbl that drives NPV to ~zero, holding all other inputs constant. The KPI is computed once when the scenario is saved and cached on `scenario_results.breakeven_oil_price`.
+- Netback per BOE and EUR (BOE).
+
+Below the table, two simple SVG-style bars rank the cases by:
+
+1. NPV (signed, with a midline).
+2. Breakeven oil price (lower bar = more resilient case).
+
+A **Refresh** button reloads the saved list. A free-text filter narrows the
+view by name, asset, regime or source. **Sort** orders by newest, NPV,
+breakeven or payback. The `delete` action on each row removes a saved
+scenario from the database.
+
+Scenarios appear here automatically when:
+
+- You click **Run scenario** on the Scenario tab — runs persist by default.
+- You click **Save approved** or **Save & Run** in CSV Exchange.
 
 ## CSV Exchange View
 
@@ -272,6 +308,25 @@ on the row you want to evaluate. The app:
 1. Pushes the parsed inputs into the Scenario form (overwriting current values).
 2. Clears any stale result so the next `Run scenario` reflects the new case.
 3. Switches to the **Scenario** tab automatically so you can review and run.
+
+### Approve & Save Imported Rows
+
+Each parsed row also gets a checkbox. Tick the rows you want to keep, then:
+
+- **Save approved** — persists the inputs to the database without running
+  economics. Useful for staging future scenarios.
+- **Save & Run** — persists each row, runs `project_scenario` server-side,
+  and stores the resulting NPV, payback, breakeven oil price and monthly
+  summary on `scenario_results`. The saved IDs are echoed back in the
+  feedback line; the rows then appear in the **Scenario Compare** tab and
+  in the Assets view (after a refresh).
+
+Behind the scenes the UI POSTs to `/api/scenarios/import` with one payload
+containing all selected rows. Each row stores `asset_id_or_name` as
+`scenarios.asset_alias`. If that alias matches an existing asset by id or
+case-insensitive name, the foreign key `scenarios.asset_id` is also set —
+otherwise only the alias is kept and the existing asset table is left
+untouched, so naming new cases like `asset1`, `asset2` etc. is safe.
 
 Rules:
 
@@ -314,13 +369,26 @@ Click `Export asset register` to export all currently loaded assets and compact 
 ## Recommended Workflow
 
 1. Load an asset or build a custom well case.
-2. Run Scenario and inspect KPIs.
+2. Run Scenario and inspect KPIs. The result is automatically saved.
 3. Switch the decline model and compare exponential vs hyperbolic economics.
 4. Run Tornado to identify dominant drivers.
 5. Run Monte Carlo to quantify distribution risk.
 6. Add Events to test operational shocks.
 7. Use Decision Matrix for keep-online, choke-back, shut-in or restart calls.
 8. Export scenario and cash flow CSVs for documentation.
+
+### Portfolio Workflow (CSV Import → Compare)
+
+1. Build a multi-row CSV from `examples/asset_pulse_scenario_input_template.csv`.
+   Use distinct asset aliases such as `asset1`, `asset2`, ... in the
+   `asset_id_or_name` column.
+2. Open **CSV Exchange**, click `Import scenario CSV`.
+3. Review the parsed rows, untick anything you do not want stored, then click
+   **Save & Run**.
+4. Open **Scenario Compare** to inspect NPV, breakeven oil price and payback
+   side-by-side; sort or filter to spot the best case.
+5. Open **Assets** and click **Refresh cases** if the new scenarios are not
+   already visible.
 9. Persist or seed production data in Neon once validated.
 
 ## Interpretation Notes

@@ -123,3 +123,17 @@ class DecisionMatrixAsset(BaseModel):
 class DecisionMatrixRequest(BaseModel):
     assets: list[DecisionMatrixAsset]
     criteria: Optional[list[dict]] = None  # override default weights
+
+
+class ScenarioImportRow(BaseModel):
+    """One CSV row staged for save. asset_id_or_name is optional metadata."""
+    scenario_name: Optional[str] = None
+    asset_id_or_name: Optional[str] = None
+    notes: Optional[str] = None
+    inputs: ScenarioInputs
+
+
+class ScenarioImportRequest(BaseModel):
+    rows: list[ScenarioImportRow]
+    run: bool = True  # if True, also run economics and persist results
+    source: str = "csv_import"

@@ -86,6 +86,8 @@ class Scenario(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False)
     asset_id = Column(Integer)
+    asset_alias = Column(String(160))  # raw asset_id_or_name from CSV when no FK match
+    source = Column(String(40))  # "manual" | "csv_import" | "api"
     inputs = Column(_json_column())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -99,6 +101,9 @@ class ScenarioResult(Base):
     payback_months = Column(Float)
     netback_per_boe = Column(Float)
     economic_limit_boe_per_month = Column(Float)
+    breakeven_oil_price = Column(Float)  # USD/bbl that drives NPV to ~zero
+    total_boe = Column(Float)
+    fiscal_regime = Column(String(40))
     monthly_summary = Column(_json_column())  # compact: months, net_revenue, opex, fcf
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -126,6 +131,32 @@ class DecisionMatrixRun(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    # Lightweight, idempotent migrations for columns added after the initial
+    # schema. Both Postgres 14+ and SQLite support ADD COLUMN IF NOT EXISTS.
+    _add_columns: list[tuple[str, str, str]] = [
+        ("scenarios", "asset_alias", "VARCHAR(160)"),
+        ("scenarios", "source", "VARCHAR(40)"),
+        ("scenario_results", "breakeven_oil_price", "DOUBLE PRECISION"),
+        ("scenario_results", "total_boe", "DOUBLE PRECISION"),
+        ("scenario_results", "fiscal_regime", "VARCHAR(40)"),
+    ]
+    with engine.begin() as conn:
+        for table, col, coltype in _add_columns:
+            try:
+                conn.exec_driver_sql(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}"
+                )
+            except Exception:
+                # Older SQLite (<3.35) lacks IF NOT EXISTS; check pragma instead.
+                try:
+                    rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+                    existing = {r[1] for r in rows}
+                    if col not in existing:
+                        conn.exec_driver_sql(
+                            f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"
+                        )
+                except Exception:
+                    pass
 
 
 @contextmanager

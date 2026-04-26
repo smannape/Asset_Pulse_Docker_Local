@@ -23,6 +23,15 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   return res.json();
 }
 
+export async function apiDelete<T = unknown>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`DELETE ${path} failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
 export type ScenarioInputs = {
   asset_name: string;
   months_horizon: number;
@@ -124,6 +133,7 @@ export type FiscalBlock = {
 export type ScenarioResult = {
   asset_name: string;
   scenario_id?: number;
+  breakeven_oil_price?: number | null;
   kpis: {
     npv: number;
     pv10: number;
@@ -231,4 +241,48 @@ export type EventInput = {
   magnitude: number;
   duration_months: number;
   notes?: string;
+};
+
+export type SavedScenarioResult = {
+  npv: number | null;
+  pv10: number | null;
+  payback_months: number | null;
+  netback_per_boe: number | null;
+  economic_limit_boe_per_month: number | null;
+  breakeven_oil_price: number | null;
+  total_boe: number | null;
+  fiscal_regime: string | null;
+};
+
+export type SavedScenario = {
+  id: number;
+  name: string;
+  asset_id: number | null;
+  asset_alias: string | null;
+  source: string | null;
+  created_at: string | null;
+  inputs: ScenarioInputs;
+  result: SavedScenarioResult | null;
+};
+
+export type ScenarioImportRow = {
+  scenario_name?: string;
+  asset_id_or_name?: string;
+  notes?: string;
+  inputs: ScenarioInputs;
+};
+
+export type ScenarioImportSavedEntry = {
+  scenario_id: number;
+  name: string;
+  asset_alias: string | null;
+  asset_id: number | null;
+  npv?: number | null;
+  breakeven_oil_price?: number | null;
+  ran: boolean;
+};
+
+export type ScenarioImportResponse = {
+  saved: ScenarioImportSavedEntry[];
+  errors: Array<{ row: number; error: string }>;
 };

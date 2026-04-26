@@ -43,14 +43,20 @@ CREATE TABLE IF NOT EXISTS production_forecasts (
 );
 
 CREATE TABLE IF NOT EXISTS scenarios (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(120) NOT NULL,
-    asset_id    INTEGER REFERENCES assets(id) ON DELETE SET NULL,
-    inputs      JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id           SERIAL PRIMARY KEY,
+    name         VARCHAR(120) NOT NULL,
+    asset_id     INTEGER REFERENCES assets(id) ON DELETE SET NULL,
+    asset_alias  VARCHAR(160),
+    source       VARCHAR(40),
+    inputs       JSONB,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_scenarios_asset ON scenarios (asset_id);
+
+-- Idempotent column adds for upgrades from earlier schema (pre-CSV-import)
+ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS asset_alias VARCHAR(160);
+ALTER TABLE scenarios ADD COLUMN IF NOT EXISTS source      VARCHAR(40);
 
 CREATE TABLE IF NOT EXISTS scenario_results (
     id                            SERIAL PRIMARY KEY,
@@ -60,10 +66,17 @@ CREATE TABLE IF NOT EXISTS scenario_results (
     payback_months                DOUBLE PRECISION,
     netback_per_boe               DOUBLE PRECISION,
     economic_limit_boe_per_month  DOUBLE PRECISION,
+    breakeven_oil_price           DOUBLE PRECISION,
+    total_boe                     DOUBLE PRECISION,
+    fiscal_regime                 VARCHAR(40),
     -- Aggregated monthly summary (months[], free_cash_flow[], net_revenue[], opex[])
     monthly_summary               JSONB,
     created_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE scenario_results ADD COLUMN IF NOT EXISTS breakeven_oil_price DOUBLE PRECISION;
+ALTER TABLE scenario_results ADD COLUMN IF NOT EXISTS total_boe           DOUBLE PRECISION;
+ALTER TABLE scenario_results ADD COLUMN IF NOT EXISTS fiscal_regime       VARCHAR(40);
 
 CREATE INDEX IF NOT EXISTS idx_results_scenario ON scenario_results (scenario_id);
 CREATE INDEX IF NOT EXISTS idx_results_npv      ON scenario_results (npv);

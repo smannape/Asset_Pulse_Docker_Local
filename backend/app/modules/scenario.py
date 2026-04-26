@@ -295,4 +295,38 @@ def npv_only(inputs: dict) -> float:
     return res["kpis"]["npv"]
 
 
-__all__ = ["project_scenario", "npv_only"]
+def breakeven_oil_price(inputs: dict, low: float = 1.0, high: float = 500.0,
+                       tol: float = 0.5, max_iter: int = 32) -> float | None:
+    """Bisection search for the oil price (USD/bbl) that drives NPV to zero.
+
+    Returns None when no sign change exists in [low, high] — i.e. the project
+    is either always profitable or always losing across that range.
+    """
+    base = dict(inputs)
+
+    def f(p: float) -> float:
+        return npv_only({**base, "oil_price": p})
+
+    f_lo = f(low)
+    f_hi = f(high)
+    if f_lo == 0:
+        return low
+    if f_hi == 0:
+        return high
+    if f_lo * f_hi > 0:
+        return None
+    a, b = low, high
+    fa = f_lo
+    for _ in range(max_iter):
+        mid = (a + b) / 2.0
+        fm = f(mid)
+        if abs(fm) < 1.0 or (b - a) < tol:
+            return round(mid, 2)
+        if fa * fm < 0:
+            b = mid
+        else:
+            a, fa = mid, fm
+    return round((a + b) / 2.0, 2)
+
+
+__all__ = ["project_scenario", "npv_only", "breakeven_oil_price"]

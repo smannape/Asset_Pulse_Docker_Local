@@ -572,4 +572,49 @@ code {
 .csv-import-table tr.loaded { background: rgba(46, 197, 113, 0.06); }
 .csv-import-table td.right,
 .csv-import-table th.right { text-align: right; }
+
+/* Scenario compare */
+.compare-table th { white-space: nowrap; }
+.compare-bars {
+  display: grid;
+  grid-template-columns: 220px 1fr 110px;
+  row-gap: 6px;
+  column-gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+.compare-row {
+  display: contents;
+}
+.compare-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.compare-name { color: var(--text); }
+.compare-sub { font-size: 11px; }
+.compare-track {
+  position: relative;
+  height: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+.compare-mid {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.compare-bar {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.compare-bar.pos { background: var(--good); }
+.compare-bar.neg { background: var(--bad); }
+.compare-value { text-align: right; }
 .csv-import-table button { padding: 4px 10px; font-size: 11px; }

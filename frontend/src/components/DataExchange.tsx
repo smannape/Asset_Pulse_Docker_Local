@@ -1,5 +1,12 @@
-import { useState } from "react";
-import type { Asset, ScenarioInputs, ScenarioResult } from "../lib/api";
+import { useMemo, useState } from "react";
+import {
+  apiPost,
+  type Asset,
+  type ScenarioImportResponse,
+  type ScenarioImportRow,
+  type ScenarioInputs,
+  type ScenarioResult,
+} from "../lib/api";
 import { downloadText, parseCsv, toCsv } from "../lib/csv";
 import { mapCsvRowToInputs, type ParsedScenarioRow } from "../lib/scenarioCsv";
 
@@ -9,12 +16,14 @@ export function DataExchange({
   inputs,
   onImportInputs,
   onLoadScenario,
+  onScenariosSaved,
   result,
   assets,
 }: {
   inputs: ScenarioInputs;
   onImportInputs: (inputs: ScenarioInputs) => void;
   onLoadScenario?: (inputs: ScenarioInputs) => void;
+  onScenariosSaved?: () => void;
   result: ScenarioResult | null;
   assets: Asset[];
 }) {
@@ -22,6 +31,13 @@ export function DataExchange({
   const [fileName, setFileName] = useState<string>("");
   const [error, setError] = useState<ImportError | null>(null);
   const [loadedIndex, setLoadedIndex] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const allSelected = rows.length > 0 && selected.size === rows.length;
+  const selectedCount = selected.size;
 
   const exportInputs = () => {
     downloadText("asset-pulse-scenario-inputs.csv", toCsv([inputs]));
@@ -64,6 +80,9 @@ export function DataExchange({
     if (!file) return;
     setError(null);
     setLoadedIndex(null);
+    setSelected(new Set());
+    setSaveMsg(null);
+    setSaveErr(null);
     try {
       const text = await file.text();
       const raw = parseCsv(text);
@@ -76,6 +95,8 @@ export function DataExchange({
       const parsed = raw.map((r) => mapCsvRowToInputs(r, inputs));
       setRows(parsed);
       setFileName(file.name);
+      // Default-select all parsed rows so the user can hit Save & Run immediately.
+      setSelected(new Set(parsed.map((_, i) => i)));
     } catch (e) {
       setRows([]);
       setError({ fileName: file.name, message: e instanceof Error ? e.message : String(e) });
@@ -93,6 +114,64 @@ export function DataExchange({
     }
   };
 
+  const toggleRow = (idx: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(allSelected ? new Set() : new Set(rows.map((_, i) => i)));
+  };
+
+  const saveSelected = async (run: boolean) => {
+    if (selectedCount === 0) return;
+    setSaving(true);
+    setSaveMsg(null);
+    setSaveErr(null);
+    try {
+      const payload: { rows: ScenarioImportRow[]; run: boolean; source: string } = {
+        rows: Array.from(selected)
+          .sort((a, b) => a - b)
+          .map((idx) => {
+            const r = rows[idx];
+            return {
+              scenario_name: r.scenario_name || undefined,
+              asset_id_or_name: r.asset_id_or_name || undefined,
+              notes: r.notes || undefined,
+              inputs: r.inputs,
+            };
+          }),
+        run,
+        source: "csv_import",
+      };
+      const resp = await apiPost<ScenarioImportResponse>("/api/scenarios/import", payload);
+      const errCount = resp.errors.length;
+      const okCount = resp.saved.length;
+      const ids = resp.saved.map((s) => `#${s.scenario_id}`).join(", ");
+      setSaveMsg(
+        `${okCount} scenario${okCount === 1 ? "" : "s"} ${run ? "saved & run" : "saved"} (${ids})` +
+          (errCount > 0 ? ` · ${errCount} error${errCount === 1 ? "" : "s"}` : ""),
+      );
+      if (errCount > 0) {
+        setSaveErr(resp.errors.map((e) => `Row ${e.row}: ${e.error}`).join("; "));
+      }
+      if (onScenariosSaved) onScenariosSaved();
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const importSummary = useMemo(() => {
+    if (rows.length === 0) return null;
+    return `${rows.length} row${rows.length === 1 ? "" : "s"} from ${fileName}`;
+  }, [rows, fileName]);
+
   return (
     <div>
       <div className="console" style={{ minHeight: 120 }}>
@@ -102,7 +181,8 @@ export function DataExchange({
         </span>
         <span className="ln dim">
           Imports support the multi-row template at examples/asset_pulse_scenario_input_template.csv as well as
-          one-row exports from this app. Pick a row and click Load to Scenario to push it into the Scenario tab.
+          one-row exports from this app. Tick the rows you want to keep, then click Save &amp; Run to push them
+          into the database — they will appear in the Scenario Compare and Asset tabs.
         </span>
       </div>
 
@@ -135,15 +215,72 @@ export function DataExchange({
         <div className="panel" style={{ marginTop: 12 }}>
           <header>
             <h2>Imported scenarios</h2>
-            <span className="meta muted">
-              {rows.length} row{rows.length === 1 ? "" : "s"} from {fileName}
-            </span>
+            <span className="meta muted">{importSummary}</span>
           </header>
           <div className="body" style={{ padding: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: 10,
+                borderBottom: "1px solid var(--border-soft)",
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="muted" style={{ fontSize: 12 }}>
+                {selectedCount} of {rows.length} selected
+              </span>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <button onClick={toggleAll} title="Toggle all rows">
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+                <button
+                  onClick={() => void saveSelected(false)}
+                  disabled={selectedCount === 0 || saving}
+                  title="Save selected rows to the database without running economics"
+                >
+                  Save approved
+                </button>
+                <button
+                  className="primary"
+                  onClick={() => void saveSelected(true)}
+                  disabled={selectedCount === 0 || saving}
+                  title="Save selected rows and run economics — results land in Scenario Compare"
+                >
+                  {saving ? "Saving..." : "Save & Run"}
+                </button>
+              </div>
+            </div>
+            {saveMsg && (
+              <div
+                className="ln"
+                style={{ padding: "8px 10px", color: "var(--good)", fontSize: 12 }}
+              >
+                {saveMsg}
+              </div>
+            )}
+            {saveErr && (
+              <div
+                className="ln"
+                style={{ padding: "8px 10px", color: "var(--bad)", fontSize: 12 }}
+              >
+                ! {saveErr}
+              </div>
+            )}
             <div style={{ overflowX: "auto" }}>
               <table className="csv-import-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label="Toggle all"
+                      />
+                    </th>
                     <th>#</th>
                     <th>Scenario</th>
                     <th>Asset</th>
@@ -159,6 +296,14 @@ export function DataExchange({
                 <tbody>
                   {rows.map((row, idx) => (
                     <tr key={idx} className={loadedIndex === idx ? "loaded" : ""}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(idx)}
+                          onChange={() => toggleRow(idx)}
+                          aria-label={`Select row ${idx + 1}`}
+                        />
+                      </td>
                       <td className="muted">{idx + 1}</td>
                       <td>{row.scenario_name || "—"}</td>
                       <td>{row.asset_id_or_name || row.inputs.asset_name}</td>
