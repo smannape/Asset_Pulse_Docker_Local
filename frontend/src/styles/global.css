@@ -548,3 +548,28 @@ code {
 .row { display: flex; gap: 8px; align-items: center; }
 .row.gap-lg { gap: 16px; }
 .grow { flex: 1; }
+
+.csv-import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.csv-import-table th,
+.csv-import-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: middle;
+}
+.csv-import-table th {
+  background: var(--surface);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  font-weight: 500;
+}
+.csv-import-table tr.loaded { background: rgba(46, 197, 113, 0.06); }
+.csv-import-table td.right,
+.csv-import-table th.right { text-align: right; }
+.csv-import-table button { padding: 4px 10px; font-size: 11px; }

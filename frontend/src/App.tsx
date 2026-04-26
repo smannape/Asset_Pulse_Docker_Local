@@ -273,6 +273,11 @@ export default function App() {
             <DataExchange
               inputs={inputs}
               onImportInputs={setInputs}
+              onLoadScenario={(next) => {
+                setInputs(next);
+                setResult(null);
+                setView("scenario");
+              }}
               result={result}
               assets={assets}
             />

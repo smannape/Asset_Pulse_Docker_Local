@@ -18,11 +18,24 @@ export function downloadText(filename: string, content: string, mime = "text/csv
 }
 
 export function parseSingleRowCsv(text: string): Record<string, string> {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return {};
-  const headers = parseCsvLine(lines[0]);
-  const values = parseCsvLine(lines[1]);
-  return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
+  const rows = parseCsv(text);
+  return rows[0] ?? {};
+}
+
+export function parseCsv(text: string): Array<Record<string, string>> {
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((h) => h.trim());
+  const out: Array<Record<string, string>> = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCsvLine(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((h, j) => {
+      row[h] = (values[j] ?? "").trim();
+    });
+    out.push(row);
+  }
+  return out;
 }
 
 function escapeCsv(value: unknown): string {

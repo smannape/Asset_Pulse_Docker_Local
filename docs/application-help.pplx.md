@@ -260,14 +260,37 @@ Use this when:
 
 ### Import Scenario CSV
 
-Use `Import scenario CSV` to upload an edited one-row scenario input file.
+Use `Import scenario CSV` to upload either:
+
+- a one-row export from `Export scenario inputs`, or
+- the multi-row template at `examples/asset_pulse_scenario_input_template.csv`.
+
+After import, every row in the file is shown in an **Imported scenarios** table
+with scenario name, asset, regime and key economics. Click `Load to Scenario`
+on the row you want to evaluate. The app:
+
+1. Pushes the parsed inputs into the Scenario form (overwriting current values).
+2. Clears any stale result so the next `Run scenario` reflects the new case.
+3. Switches to the **Scenario** tab automatically so you can review and run.
 
 Rules:
 
-- Column names should match the exported file.
-- Numeric fields are parsed as numbers.
-- `asset_name` and `decline_model` are parsed as text.
-- `apply_economic_limit` accepts `true` or `false`.
+- Column names are case- and underscore-insensitive. Both raw API field
+  names (e.g. `oil_price`) and template column names (e.g. `oil_price_usd_bbl`)
+  are recognised.
+- Percentage columns in the template (e.g. `decline_rate_annual_pct = 45`,
+  `royalty_rate_pct = 18.75`) are converted to the fractions the API expects
+  (`0.45`, `0.1875`).
+- `scenario_name`, `asset_id_or_name` and `notes` are kept as display
+  metadata; the form's **Asset name** field falls back to `asset_id_or_name`
+  when no `asset_name` column is present.
+- `apply_economic_limit` and `concession_royalty_progressive` accept
+  `true`/`false`/`yes`/`no`/`1`/`0`.
+- Blank fiscal/regime cells are ignored — the regime defaults stay in place.
+- Invalid numeric or boolean cells are listed under **Validation notes**
+  beneath the imported table; the rest of the row still loads.
+- Columns the app does not recognise (e.g. `working_interest_pct`,
+  `downtime_months`) are ignored without error.
 
 ### Export Cash Flow
 
@@ -315,7 +338,9 @@ Click `Export asset register` to export all currently loaded assets and compact 
 | API unreachable | FastAPI backend is not running or CORS is wrong. | Check backend host, `/api/health`, and `CORS_ORIGINS`. |
 | Database shows SQLite fallback | `DATABASE_URL` is missing on backend host. | Set Neon pooled `DATABASE_URL` and restart backend. |
 | Netlify page loads but calculations fail | Frontend cannot reach FastAPI. | Set `VITE_API_BASE_URL` or configure Netlify proxy redirect. |
-| Scenario import does not change fields | CSV headers do not match exported field names. | Export a template first, edit it, then re-import. |
+| Scenario import shows no rows | File has only a header line, or commas inside cells are unquoted. | Verify at least one data row and quote any cell containing a comma. |
+| Loaded row values look wrong by 100× | Columns named `*_pct` were already entered as fractions instead of percentages. | The template treats `*_pct` columns as percentages — enter `45` for 45%, not `0.45`. |
+| Imported numbers ignored | Cell contains text or units the parser can't strip (e.g. `45 percent`). | Use plain numbers; `$`, `,`, `_`, spaces, and a trailing `%` are stripped automatically. |
 | Monte Carlo is slow | Iterations are high or backend host is cold-starting. | Start with 500–1000 iterations; increase after deployment is stable. |
 | Results look too optimistic | Decline, water cut, OPEX or abandonment assumptions may be too low. | Test downside cases in Tornado and Monte Carlo. |
 
