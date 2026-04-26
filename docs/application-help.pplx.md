@@ -67,6 +67,14 @@ The Scenario view is the main economic model.
 4. Keep `Apply economic limit truncation` enabled if you want the model to stop production once the well becomes uneconomic.
 5. Click `Run scenario`.
 
+### Reset Button
+
+The `Reset` button on the Scenario form restores every input — normal numeric fields, the fiscal regime, and all advanced/regime-specific fields — to the application defaults defined in `DEFAULT_INPUTS` (`frontend/src/components/ScenarioForm.tsx`). It also clears the `Load asset profile` selection so a previously loaded asset cannot silently re-hydrate the form. To work from an asset profile after Reset, pick the asset again from the dropdown.
+
+### Sample Scenario CSV
+
+A starter template with five regime examples (US royalty/tax, NOC internal, PSC, TSC, concession/tax-royalty) is checked in at `examples/asset_pulse_scenario_input_template.csv`. Use it as the column reference when wiring up batch loads or external spreadsheets.
+
 ### Key Inputs
 
 | Input | Meaning |

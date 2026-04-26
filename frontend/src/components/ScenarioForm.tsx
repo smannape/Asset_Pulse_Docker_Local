@@ -66,12 +66,17 @@ export function ScenarioForm({
   const [selected, setSelected] = useState<string>("");
 
   useEffect(() => {
-    if (selected === "") return;
-    onLoadAsset(selected === "custom" ? null : Number(selected));
+    if (selected === "" || selected === "custom") return;
+    onLoadAsset(Number(selected));
   }, [selected, onLoadAsset]);
 
   const set = <K extends keyof ScenarioInputs>(k: K, v: ScenarioInputs[K]) =>
     onChange({ ...inputs, [k]: v });
+
+  const handleReset = () => {
+    setSelected("");
+    onChange({ ...DEFAULT_INPUTS });
+  };
 
   const numField = (k: keyof ScenarioInputs, label: string, step = 0.01) => {
     const raw = inputs[k];
@@ -112,7 +117,12 @@ export function ScenarioForm({
       </label>
 
       <div className="form-actions form-actions-top">
-        <button type="button" className="ghost" onClick={() => onChange(DEFAULT_INPUTS)}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={handleReset}
+          title="Restore base scenario defaults (clears any loaded asset profile)"
+        >
           Reset
         </button>
         <button type="submit" className="primary" disabled={loading}>

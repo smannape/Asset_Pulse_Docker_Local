@@ -41,3 +41,8 @@ pnpm-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Agent / local tooling (contain secrets or per-machine config)
+.claude/
+.mcp.json
+CLAUDE.md

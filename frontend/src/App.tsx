@@ -60,6 +60,9 @@ export default function App() {
   }, [inputs]);
 
   // When user picks an asset profile, hydrate inputs from cost profile.
+  // Use functional setInputs so the callback identity doesn't change with every
+  // input edit — otherwise the ScenarioForm's load-asset effect would re-fire
+  // and silently overwrite changes (including a Reset).
   const onLoadAsset = useCallback(
     (id: number | null) => {
       if (id === null) return;
@@ -67,24 +70,25 @@ export default function App() {
       if (!a) return;
       const cp = a.cost_profile;
       if (!cp) return;
-      const next: ScenarioInputs = {
-        ...inputs,
-        asset_name: a.name,
-        ...(cp.decline_inputs ?? {}),
-        ...(cp.opex_inputs ?? {}),
-      } as ScenarioInputs;
-      // Compute total CAPEX as development_capex if it's a well
-      if (a.asset_type === "well" && cp.capex_inputs) {
-        const sum = Object.entries(cp.capex_inputs).reduce((acc, [k, v]) => {
-          if (k === "contingency_pct" || k === "capitalized_aro") return acc;
-          return acc + (typeof v === "number" ? v : 0);
-        }, 0);
-        const cont = (cp.capex_inputs.contingency_pct ?? 0) * sum;
-        next.development_capex = sum + cont + (cp.capex_inputs.capitalized_aro ?? 0);
-      }
-      setInputs(next);
+      setInputs((prev) => {
+        const next: ScenarioInputs = {
+          ...prev,
+          asset_name: a.name,
+          ...(cp.decline_inputs ?? {}),
+          ...(cp.opex_inputs ?? {}),
+        } as ScenarioInputs;
+        if (a.asset_type === "well" && cp.capex_inputs) {
+          const sum = Object.entries(cp.capex_inputs).reduce((acc, [k, v]) => {
+            if (k === "contingency_pct" || k === "capitalized_aro") return acc;
+            return acc + (typeof v === "number" ? v : 0);
+          }, 0);
+          const cont = (cp.capex_inputs.contingency_pct ?? 0) * sum;
+          next.development_capex = sum + cont + (cp.capex_inputs.capitalized_aro ?? 0);
+        }
+        return next;
+      });
     },
-    [assets, inputs]
+    [assets]
   );
 
   const baseMonthlyCf = useMemo(() => {
