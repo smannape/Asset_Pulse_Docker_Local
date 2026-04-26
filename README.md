@@ -18,7 +18,27 @@ oil-capex-opex-dashboard/
 
 ---
 
-## Quick start (local)
+## Quick start (Docker Desktop) — recommended
+
+If you have Docker Desktop installed, you can run the full stack
+(PostgreSQL 17 + FastAPI backend + Nginx-served React frontend) with no
+manual Python/Node/PostgreSQL setup:
+
+```bash
+cp .env.docker.example .env       # then edit POSTGRES_PASSWORD
+docker compose up --build
+```
+
+Open <http://localhost:8080> — that's the entire app. The frontend container
+reverse-proxies `/api/*` to the backend, so a single URL is all you need.
+
+Step-by-step beginner guide (install, env file, health checks, logs, backup/
+restore, troubleshooting):
+[`docs/docker-desktop-deployment.pplx.md`](docs/docker-desktop-deployment.pplx.md).
+
+---
+
+## Quick start (local, without Docker)
 
 Two terminals.
 

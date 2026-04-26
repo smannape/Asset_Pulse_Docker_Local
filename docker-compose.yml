@@ -1,0 +1,79 @@
+# Asset Pulse — Docker Desktop deployment.
+# Brings up PostgreSQL 17, the FastAPI backend, and the Nginx-served React frontend.
+# See docs/docker-desktop-deployment.pplx.md for a step-by-step beginner guide.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: assetpulse_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-assetpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-assetpulse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - assetpulse_db_data:/var/lib/postgresql/data
+      # First-boot bootstrap: schema + seed data. Re-run only on a fresh volume.
+      - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    # The DB is reachable on the internal Docker network as `db:5432`.
+    # Uncomment the ports block below if you want to connect from your host
+    # (psql, DBeaver, etc.). 5433 is used to avoid clashing with a local
+    # PostgreSQL install on the default 5432.
+    # ports:
+    #   - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-assetpulse_user} -d ${POSTGRES_DB:-assetpulse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - assetpulse_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: assetpulse_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-assetpulse}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Optional host port for direct backend debugging. Frontend talks to the
+    # backend via the internal `backend` hostname, so this is not required.
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - assetpulse_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: assetpulse_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    networks:
+      - assetpulse_net
+
+volumes:
+  assetpulse_db_data:
+    name: assetpulse_db_data
+
+networks:
+  assetpulse_net:
+    name: assetpulse_net
+    driver: bridge
