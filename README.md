@@ -38,6 +38,27 @@ restore, troubleshooting):
 
 ---
 
+## Quick start (Windows launcher — `AssetPulseLauncher.exe`)
+
+For Windows users who prefer a double-click experience: download the
+distribution ZIP, extract it, and run **`AssetPulseLauncher.exe`** (or the
+`launcher\AssetPulseLauncher.bat` fallback). The launcher checks Docker
+Desktop is running, generates a `.env` with a strong random
+`POSTGRES_PASSWORD` if one is missing, runs `docker compose up -d --build`,
+waits for `/api/health`, and opens <http://localhost:8080>.
+
+Prerequisite: **Docker Desktop must be installed and running**. The launcher
+does not bundle Docker.
+
+To stop the stack: `docker compose down` from the project folder.
+To wipe the database too: `docker compose down -v` (destroys all data).
+
+Build instructions, behaviour reference, and troubleshooting:
+[`docs/windows-executable-distribution.pplx.md`](docs/windows-executable-distribution.pplx.md).
+Launcher source: [`launcher/`](launcher/).
+
+---
+
 ## Quick start (local, without Docker)
 
 Two terminals.
