@@ -7,6 +7,7 @@ Production-quality prototype for forecasting asset performance, analysing CAPEX,
 - **Database:** PostgreSQL (Neon-compatible), JSONB used where useful. Local SQLite fallback when `DATABASE_URL` is absent.
 - **Knowledge base:** [`docs/oil-well-capex-opex-knowledge-base.pplx.md`](docs/oil-well-capex-opex-knowledge-base.pplx.md) — formulas, taxonomy, and source citations.
 - **Application help:** [`docs/application-help.pplx.md`](docs/application-help.pplx.md) — user guide for scenarios, sensitivity, Monte Carlo, events, decision matrix, assets, and CSV exchange.
+- **Help me — calculation guide:** [`docs/help-me-calculation-guide.pplx.md`](docs/help-me-calculation-guide.pplx.md) — how to calculate and what to consider for `fixed_opex_usd_month`, `variable_opex_usd_boe`, `water_handling_usd_bbl`, `water_cut_pct`, `capex_multiplier`, `opex_multiplier`, `downtime_months`, `downtime_start_month`, PSC / TSC / concession fields, and CAPEX uplift, with NOC / IOC / US Independent guidance.
 
 ```
 oil-capex-opex-dashboard/

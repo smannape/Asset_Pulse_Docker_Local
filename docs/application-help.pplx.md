@@ -145,6 +145,18 @@ A single dropdown inside the advanced section controls how the base monthly cash
 
 References: Bindemann/Oxford Energy WPM 25 (1999); Daily Jus on Omani EPSA disputes (2024); PMC fiscal-regimes review (PMC7798991); AGSI Aramco analysis.
 
+> **Need help populating the advanced CAPEX/OPEX/fiscal fields?** See the
+> step-by-step calculation guide at
+> [`docs/help-me-calculation-guide.pplx.md`](help-me-calculation-guide.pplx.md)
+> — it explains every field (`fixed_opex_usd_month`, `variable_opex_usd_boe`,
+> `water_handling_usd_bbl`, `water_cut_pct`, `capex_multiplier`,
+> `opex_multiplier`, `downtime_months`, `downtime_start_month`,
+> `psc_royalty_rate_pct`, `psc_cost_recovery_ceiling_pct`,
+> `psc_contractor_profit_oil_share_pct`, `contractor_tax_rate_pct`,
+> `capex_uplift_pct`, `tsc_fee_usd_boe`, `tsc_cost_recovery_cap_usd_month`,
+> `concession_royalty_rate_pct`, `concession_income_tax_rate_pct`) with
+> formulas, QA checks and worked NOC / IOC / US Independent examples.
+
 ### Outputs
 
 The KPI strip and analysis report show:
