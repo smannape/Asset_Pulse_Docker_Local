@@ -23,6 +23,17 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   return res.json();
 }
 
+export async function runScenarioApi<T = unknown>(
+  body: unknown,
+  opts?: { scenarioId?: number | null },
+): Promise<T> {
+  const params = new URLSearchParams();
+  if (opts?.scenarioId != null) params.set("scenario_id", String(opts.scenarioId));
+  const qs = params.toString();
+  const path = `/api/scenario/run${qs ? `?${qs}` : ""}`;
+  return apiPost<T>(path, body);
+}
+
 export async function apiPostBlob(path: string, body: unknown): Promise<Blob> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",

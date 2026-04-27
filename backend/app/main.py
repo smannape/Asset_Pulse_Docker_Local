@@ -234,9 +234,21 @@ def _resolve_asset_id(s, alias: str | None) -> int | None:
 
 
 @app.post("/api/scenario/run")
-def run_scenario(inputs: ScenarioInputs, persist: bool = True, name: str | None = None) -> dict:
+def run_scenario(
+    inputs: ScenarioInputs,
+    persist: bool = True,
+    name: str | None = None,
+    scenario_id: int | None = None,
+) -> dict:
     """Run a scenario. By default, persists to DB so it is visible in the
-    Scenario Compare tab. Pass persist=false to compute without saving."""
+    Scenario Compare tab. Pass persist=false to compute without saving.
+
+    When ``scenario_id`` is provided, the existing saved Scenario row is
+    re-evaluated in-place: its ``inputs`` are refreshed from the request body
+    and its ScenarioResult is replaced with the freshly-computed one. This is
+    the "Run saved scenario" path — it keeps the comparison list stable
+    instead of accumulating a new row on every run.
+    """
     payload = inputs.model_dump()
     try:
         result = scenario.project_scenario(payload)
@@ -248,20 +260,144 @@ def run_scenario(inputs: ScenarioInputs, persist: bool = True, name: str | None 
         raise HTTPException(status_code=400, detail=f"scenario calculation failed: {exc}") from exc
 
     if persist:
-        scenario_id, breakeven, persist_error = _try_persist(
-            name=name or f"{result['asset_name']} - run",
-            payload=payload,
-            result=result,
-            asset_alias=payload.get("asset_name"),
-            asset_id=None,
-            source="api",
-        )
         if scenario_id is not None:
-            result["scenario_id"] = scenario_id
+            sid, breakeven, persist_error = _try_update(
+                scenario_id=scenario_id,
+                payload=payload,
+                result=result,
+                name=name,
+            )
+            if sid is None:
+                # Scenario id didn't resolve — fall back to a fresh insert so
+                # the user still gets a persisted result.
+                sid, breakeven, persist_error = _try_persist(
+                    name=name or f"{result['asset_name']} - run",
+                    payload=payload,
+                    result=result,
+                    asset_alias=payload.get("asset_name"),
+                    asset_id=None,
+                    source="api",
+                )
+        else:
+            sid, breakeven, persist_error = _try_persist(
+                name=name or f"{result['asset_name']} - run",
+                payload=payload,
+                result=result,
+                asset_alias=payload.get("asset_name"),
+                asset_id=None,
+                source="api",
+            )
+        if sid is not None:
+            result["scenario_id"] = sid
             result["breakeven_oil_price"] = breakeven
         if persist_error:
             result["persist_error"] = persist_error
     return _sanitize_floats(result)
+
+
+@app.post("/api/scenarios/{scenario_id}/run")
+def run_saved_scenario(scenario_id: int, inputs: ScenarioInputs | None = None) -> dict:
+    """Re-run an existing saved scenario by ID.
+
+    If ``inputs`` is omitted, the stored inputs are used. Either way the
+    ScenarioResult row is refreshed in-place. Convenience wrapper around
+    /api/scenario/run?scenario_id=... for clients that prefer a RESTful path.
+    """
+    if inputs is None:
+        with get_session() as s:
+            sc = s.get(Scenario, scenario_id)
+            if sc is None:
+                raise HTTPException(status_code=404, detail="scenario not found")
+            stored = sc.inputs or {}
+        try:
+            inputs = ScenarioInputs(**stored)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=400, detail=f"stored inputs invalid: {exc}"
+            ) from exc
+    return run_scenario(inputs=inputs, persist=True, name=None, scenario_id=scenario_id)
+
+
+def _try_update(
+    *, scenario_id: int, payload: dict, result: dict, name: str | None,
+) -> tuple[int | None, float | None, str | None]:
+    """Update an existing Scenario + replace its ScenarioResult.
+
+    Returns (scenario_id, breakeven, persist_error). If the scenario row does
+    not exist we return (None, None, None) so the caller can decide whether to
+    insert a new one. Schema-drift errors trigger a JIT migration retry, just
+    like _try_persist.
+    """
+    def _do_update(s) -> tuple[int, float | None]:
+        sc = s.get(Scenario, scenario_id)
+        if sc is None:
+            return 0, None  # sentinel handled below
+        sc.inputs = _sanitize_floats(payload)
+        if name:
+            sc.name = name
+        # Refresh asset_alias if the new payload renames the asset
+        alias = payload.get("asset_name")
+        if alias:
+            sc.asset_alias = alias
+        # Replace any existing ScenarioResult rows for this scenario
+        s.execute(
+            ScenarioResult.__table__.delete().where(
+                ScenarioResult.scenario_id == scenario_id
+            )
+        )
+        s.flush()
+        kpis = result["kpis"]
+        el = kpis.get("economic_limit") or {}
+        try:
+            breakeven = scenario.breakeven_oil_price(payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("breakeven_oil_price failed for scenario %s: %s", scenario_id, exc)
+            breakeven = None
+        monthly_summary = _sanitize_floats({
+            "months": result["monthly"]["months"],
+            "free_cash_flow": result["monthly"]["free_cash_flow"],
+            "net_revenue": result["monthly"]["net_revenue"],
+            "opex": result["monthly"]["opex"],
+        })
+        sr = ScenarioResult(
+            scenario_id=scenario_id,
+            npv=_safe_float(kpis.get("npv")),
+            pv10=_safe_float(kpis.get("pv10")),
+            payback_months=_safe_float(kpis.get("payback_months")),
+            netback_per_boe=_safe_float(kpis.get("netback_per_boe")),
+            economic_limit_boe_per_month=_safe_float(el.get("economic_limit_boe_per_month")),
+            breakeven_oil_price=_safe_float(breakeven),
+            total_boe=_safe_float(kpis.get("total_boe")),
+            fiscal_regime=kpis.get("fiscal_regime"),
+            monthly_summary=monthly_summary,
+        )
+        s.add(sr)
+        return scenario_id, breakeven
+
+    try:
+        with get_session() as s:
+            sid, be = _do_update(s)
+            if sid == 0:
+                return None, None, None
+            return sid, be, None
+    except Exception as first_exc:  # noqa: BLE001
+        logger.warning(
+            "scenario update failed (will retry after JIT migration): %s", first_exc
+        )
+        try:
+            ensure_scenario_schema()
+        except Exception as mig_exc:  # noqa: BLE001
+            logger.exception("JIT scenario schema migration failed")
+            return None, None, f"persist failed: {first_exc}; migration failed: {mig_exc}"
+        try:
+            with get_session() as s:
+                sid, be = _do_update(s)
+                if sid == 0:
+                    return None, None, None
+                return sid, be, None
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("scenario update failed after JIT migration")
+            return None, None, str(exc)
 
 
 def _try_persist(

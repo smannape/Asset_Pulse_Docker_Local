@@ -15,7 +15,7 @@ import { Tornado } from "./components/Tornado";
 import {
   API_BASE,
   apiGet,
-  apiPost,
+  runScenarioApi,
   type Asset,
   type SavedScenario,
   type ScenarioInputs,
@@ -36,6 +36,9 @@ export default function App() {
   const [view, setView] = useState<View>("scenario");
   const [inputs, setInputs] = useState<ScenarioInputs>(DEFAULT_INPUTS);
   const [result, setResult] = useState<ScenarioResult | null>(null);
+  // Tracks which saved scenario the form is currently bound to, so a Run
+  // updates that DB row in-place rather than creating a new sibling.
+  const [loadedScenarioId, setLoadedScenarioId] = useState<number | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [running, setRunning] = useState(false);
@@ -79,9 +82,16 @@ export default function App() {
     setRunning(true);
     setErr(null);
     try {
-      const r = await apiPost<ScenarioResult>("/api/scenario/run", inputs);
+      const r = await runScenarioApi<ScenarioResult>(inputs, {
+        scenarioId: loadedScenarioId,
+      });
       setResult(r);
-      // Persist + sibling tabs need to see the new row.
+      // Stay bound to whichever scenario row the backend persisted to, so a
+      // follow-up Run keeps updating in place rather than spawning siblings.
+      if (typeof r.scenario_id === "number") {
+        setLoadedScenarioId(r.scenario_id);
+      }
+      // Persist + sibling tabs need to see the updated row.
       bumpRefreshKey();
       void refreshAssets();
     } catch (e: unknown) {
@@ -89,7 +99,7 @@ export default function App() {
     } finally {
       setRunning(false);
     }
-  }, [inputs, bumpRefreshKey, refreshAssets]);
+  }, [inputs, loadedScenarioId, bumpRefreshKey, refreshAssets]);
 
   // When user picks an asset profile, hydrate inputs from cost profile.
   // Use functional setInputs so the callback identity doesn't change with every
@@ -102,6 +112,8 @@ export default function App() {
       if (!a) return;
       const cp = a.cost_profile;
       if (!cp) return;
+      // Picking a base asset detaches the form from any saved scenario row.
+      setLoadedScenarioId(null);
       setInputs((prev) => {
         const next: ScenarioInputs = {
           ...prev,
@@ -126,6 +138,8 @@ export default function App() {
   const onLoadSavedScenario = useCallback((sc: SavedScenario) => {
     setInputs({ ...DEFAULT_INPUTS, ...sc.inputs });
     setResult(null);
+    // Bind the form to this saved scenario so Run updates it in place.
+    setLoadedScenarioId(sc.id);
   }, []);
 
   const baseMonthlyCf = useMemo(() => {
@@ -236,6 +250,10 @@ export default function App() {
                   scenarios={scenarios}
                   onLoadAsset={onLoadAsset}
                   onLoadScenario={onLoadSavedScenario}
+                  onReset={() => {
+                    setLoadedScenarioId(null);
+                    setResult(null);
+                  }}
                 />
               </Panel>
               <div>
@@ -261,10 +279,14 @@ export default function App() {
             >
               <DataExchange
                 inputs={inputs}
-                onImportInputs={setInputs}
+                onImportInputs={(next) => {
+                  setInputs(next);
+                  setLoadedScenarioId(null);
+                }}
                 onLoadScenario={(next) => {
                   setInputs(next);
                   setResult(null);
+                  setLoadedScenarioId(null);
                 }}
                 onScenariosSaved={() => {
                   bumpRefreshKey();

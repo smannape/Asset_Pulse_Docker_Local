@@ -307,6 +307,85 @@ def test_scenarios_report_pdf() -> None:
     assert r2.status_code == 404
 
 
+def test_run_saved_scenario_updates_in_place() -> None:
+    """Re-running a saved scenario by id should refresh its row, not insert a
+    new one. This is the regression we shipped this fix for: previously every
+    Run from the Scenario tab created a sibling row in the compare list."""
+    payload = {
+        "asset_name": "saved-rerun", "months_horizon": 24,
+        "initial_oil_bopd": 500, "annual_decline": 0.30, "oil_price": 70,
+        "fixed_opex_per_month": 8000, "oil_var_per_bbl": 4,
+        "development_capex": 2_000_000,
+    }
+    first = client.post("/api/scenario/run", json=payload).json()
+    sid = first["scenario_id"]
+    initial_npv = first["kpis"]["npv"]
+    before = len(client.get("/api/scenarios").json())
+
+    # Run the same scenario id with bumped oil price — should overwrite, not append.
+    payload2 = {**payload, "oil_price": 95}
+    second = client.post(
+        f"/api/scenario/run?scenario_id={sid}", json=payload2
+    ).json()
+    assert second["scenario_id"] == sid
+    assert second["kpis"]["npv"] != initial_npv
+
+    after = len(client.get("/api/scenarios").json())
+    assert after == before, "scenario_id-targeted run must not create a new row"
+
+    listing = client.get("/api/scenarios").json()
+    saved = next(s for s in listing if s["id"] == sid)
+    assert saved["result"]["npv"] == second["kpis"]["npv"]
+    # Stored inputs were refreshed too.
+    assert saved["inputs"]["oil_price"] == 95
+
+
+def test_run_saved_scenario_by_id_endpoint() -> None:
+    """The dedicated POST /api/scenarios/{id}/run path should use stored
+    inputs when no body is supplied, and refresh the same row."""
+    payload = {
+        "asset_name": "saved-rerun-id", "months_horizon": 12,
+        "initial_oil_bopd": 300, "annual_decline": 0.35, "oil_price": 65,
+        "fixed_opex_per_month": 5000, "oil_var_per_bbl": 4,
+        "development_capex": 800_000,
+    }
+    sid = client.post("/api/scenario/run", json=payload).json()["scenario_id"]
+    before = len(client.get("/api/scenarios").json())
+
+    r = client.post(f"/api/scenarios/{sid}/run")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["scenario_id"] == sid
+
+    after = len(client.get("/api/scenarios").json())
+    assert after == before
+
+    # Unknown id -> 404
+    r404 = client.post("/api/scenarios/99999999/run")
+    assert r404.status_code == 404
+
+
+def test_run_with_unknown_scenario_id_falls_back_to_insert() -> None:
+    """If a stale UI sends a scenario_id that no longer exists (e.g. someone
+    deleted it in another tab), we still want a fresh persisted result rather
+    than a silent failure."""
+    before = len(client.get("/api/scenarios").json())
+    r = client.post(
+        "/api/scenario/run?scenario_id=99999999",
+        json={
+            "asset_name": "fallback", "months_horizon": 12,
+            "initial_oil_bopd": 200, "oil_price": 70,
+            "development_capex": 100_000,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "scenario_id" in body
+    assert body["scenario_id"] != 99999999
+    after = len(client.get("/api/scenarios").json())
+    assert after == before + 1
+
+
 def test_scenario_delete() -> None:
     payload = {
         "asset_name": "to-delete", "months_horizon": 12, "initial_oil_bopd": 200,
@@ -331,6 +410,9 @@ def main() -> None:
         test_run_persists_via_jit_migration_without_startup,
         test_run_with_unexpected_inputs_returns_400_not_500,
         test_scenarios_report_pdf,
+        test_run_saved_scenario_updates_in_place,
+        test_run_saved_scenario_by_id_endpoint,
+        test_run_with_unknown_scenario_id_falls_back_to_insert,
         test_scenario_delete,
     ]
     failed = 0

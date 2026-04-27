@@ -57,6 +57,7 @@ export function ScenarioForm({
   scenarios = [],
   onLoadAsset,
   onLoadScenario,
+  onReset,
 }: {
   inputs: ScenarioInputs;
   onChange: (v: ScenarioInputs) => void;
@@ -66,6 +67,7 @@ export function ScenarioForm({
   scenarios?: SavedScenario[];
   onLoadAsset: (id: number | null) => void;
   onLoadScenario?: (s: SavedScenario) => void;
+  onReset?: () => void;
 }) {
   const [selected, setSelected] = useState<string>("");
 
@@ -86,6 +88,7 @@ export function ScenarioForm({
   const handleReset = () => {
     setSelected("");
     onChange({ ...DEFAULT_INPUTS });
+    if (onReset) onReset();
   };
 
   const numField = (k: keyof ScenarioInputs, label: string, step = 0.01) => {
