@@ -376,7 +376,14 @@ the Scenario tab. The flow is:
    economics, returning NPV and breakeven oil per row.
 4. As soon as the request completes, the Asset registry, the Scenario Compare
    tab, and the **Load asset profile** dropdown are refreshed automatically.
-5. Upload data tab is now part of the Scenario section, exactly as the
+   The **first** saved row is also rerun to fetch its full monthly cash flow,
+   which is then projected into the visible Scenario report panel and chart so
+   you immediately see economics for what you imported. The form is bound to
+   that scenario row, so a follow-up **Run scenario** updates it in place.
+5. The CSV file picker shows `Importing...` and is disabled while parsing,
+   then re-enables as soon as rows are listed. Per-row parse errors do not
+   freeze the screen — they appear inline as validation notes on the row.
+6. Upload data tab is now part of the Scenario section, exactly as the
    workflow expects: upload → approve → save → auto-run → loadable from the
    dropdown.
 

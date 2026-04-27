@@ -292,6 +292,16 @@ export default function App() {
                   bumpRefreshKey();
                   void refreshAssets();
                 }}
+                onResultReady={(r, nextInputs) => {
+                  // CSV Save & Run finished — push the freshly-computed result
+                  // into the visible Scenario panel and bind the form to that
+                  // saved row so a follow-up Run updates it in place.
+                  setInputs(nextInputs);
+                  setResult(r);
+                  if (typeof r.scenario_id === "number") {
+                    setLoadedScenarioId(r.scenario_id);
+                  }
+                }}
                 result={result}
                 assets={assets}
               />

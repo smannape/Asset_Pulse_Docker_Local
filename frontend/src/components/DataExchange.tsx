@@ -17,6 +17,7 @@ export function DataExchange({
   onImportInputs,
   onLoadScenario,
   onScenariosSaved,
+  onResultReady,
   result,
   assets,
 }: {
@@ -24,6 +25,7 @@ export function DataExchange({
   onImportInputs: (inputs: ScenarioInputs) => void;
   onLoadScenario?: (inputs: ScenarioInputs) => void;
   onScenariosSaved?: () => void;
+  onResultReady?: (result: ScenarioResult, inputs: ScenarioInputs) => void;
   result: ScenarioResult | null;
   assets: Asset[];
 }) {
@@ -33,6 +35,7 @@ export function DataExchange({
   const [loadedIndex, setLoadedIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
@@ -83,23 +86,47 @@ export function DataExchange({
     setSelected(new Set());
     setSaveMsg(null);
     setSaveErr(null);
+    setImporting(true);
     try {
       const text = await file.text();
       const raw = parseCsv(text);
       if (raw.length === 0) {
         setRows([]);
         setFileName(file.name);
-        setError({ fileName: file.name, message: "No data rows found. Ensure a header row plus at least one row." });
+        setError({
+          fileName: file.name,
+          message: "No data rows found. Ensure a header row plus at least one row.",
+        });
         return;
       }
-      const parsed = raw.map((r) => mapCsvRowToInputs(r, inputs));
+      const parsed: ParsedScenarioRow[] = [];
+      raw.forEach((r, idx) => {
+        try {
+          parsed.push(mapCsvRowToInputs(r, inputs));
+        } catch (rowErr) {
+          parsed.push({
+            scenario_name: r["scenario_name"] ?? `row-${idx + 1}`,
+            asset_id_or_name: r["asset_id_or_name"] ?? "",
+            notes: r["notes"] ?? "",
+            inputs: { ...inputs },
+            warnings: [
+              `Could not parse row: ${rowErr instanceof Error ? rowErr.message : String(rowErr)}`,
+            ],
+          });
+        }
+      });
       setRows(parsed);
       setFileName(file.name);
       // Default-select all parsed rows so the user can hit Save & Run immediately.
       setSelected(new Set(parsed.map((_, i) => i)));
     } catch (e) {
       setRows([]);
-      setError({ fileName: file.name, message: e instanceof Error ? e.message : String(e) });
+      setError({
+        fileName: file.name,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -133,33 +160,63 @@ export function DataExchange({
     setSaveMsg(null);
     setSaveErr(null);
     try {
+      const orderedIdx = Array.from(selected).sort((a, b) => a - b);
+      const orderedRows = orderedIdx.map((idx) => rows[idx]);
       const payload: { rows: ScenarioImportRow[]; run: boolean; source: string } = {
-        rows: Array.from(selected)
-          .sort((a, b) => a - b)
-          .map((idx) => {
-            const r = rows[idx];
-            return {
-              scenario_name: r.scenario_name || undefined,
-              asset_id_or_name: r.asset_id_or_name || undefined,
-              notes: r.notes || undefined,
-              inputs: r.inputs,
-            };
-          }),
+        rows: orderedRows.map((r) => ({
+          scenario_name: r.scenario_name || undefined,
+          asset_id_or_name: r.asset_id_or_name || undefined,
+          notes: r.notes || undefined,
+          inputs: r.inputs,
+        })),
         run,
         source: "csv_import",
       };
       const resp = await apiPost<ScenarioImportResponse>("/api/scenarios/import", payload);
       const errCount = resp.errors.length;
       const okCount = resp.saved.length;
-      const ids = resp.saved.map((s) => `#${s.scenario_id}`).join(", ");
+      const idDetails = resp.saved
+        .map((s) => `#${s.scenario_id}${s.ran ? " ✓" : ""}`)
+        .join(", ");
       setSaveMsg(
-        `${okCount} scenario${okCount === 1 ? "" : "s"} ${run ? "saved & run" : "saved"} (${ids})` +
+        `${okCount} of ${orderedRows.length} scenario${okCount === 1 ? "" : "s"} ${run ? "saved & run" : "saved"} ` +
+          `(${idDetails || "none"})` +
           (errCount > 0 ? ` · ${errCount} error${errCount === 1 ? "" : "s"}` : ""),
       );
       if (errCount > 0) {
-        setSaveErr(resp.errors.map((e) => `Row ${e.row}: ${e.error}`).join("; "));
+        setSaveErr(
+          resp.errors.map((e) => `Row ${e.row}: ${e.error}`).join("; "),
+        );
       }
       if (onScenariosSaved) onScenariosSaved();
+
+      // After Save & Run, surface the FIRST run's full result into the visible
+      // Scenario panel so the user immediately sees economics for what they
+      // just imported. We re-run via /api/scenarios/{id}/run because /import
+      // only returns summary KPIs, not the monthly cash flow needed to render
+      // the report panel + chart.
+      if (run && resp.saved.length > 0 && onResultReady) {
+        const first = resp.saved[0];
+        const firstRow = orderedRows[0];
+        try {
+          const fullResult = await apiPost<ScenarioResult>(
+            `/api/scenarios/${first.scenario_id}/run`,
+            firstRow.inputs,
+          );
+          onResultReady(fullResult, firstRow.inputs);
+        } catch (rerunErr) {
+          // Don't fail the whole save just because the visible-panel refresh
+          // couldn't fetch — the rows are already persisted and visible in
+          // Scenario Compare.
+          setSaveErr(
+            (prev) =>
+              `${prev ? prev + "; " : ""}` +
+              `could not refresh result panel: ${
+                rerunErr instanceof Error ? rerunErr.message : String(rerunErr)
+              }`,
+          );
+        }
+      }
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -191,13 +248,18 @@ export function DataExchange({
         <button onClick={exportCashFlow} disabled={!result}>Export cash flow</button>
         <button onClick={exportAssets} disabled={assets.length === 0}>Export asset register</button>
         <label className="file-import">
-          Import scenario CSV
+          {importing ? "Importing..." : "Import scenario CSV"}
           <input
             type="file"
             accept=".csv,text/csv"
+            disabled={importing}
             onChange={(e) => {
-              void importCsvFile(e.target.files?.[0] ?? null);
+              const file = e.target.files?.[0] ?? null;
+              // Reset the input value synchronously so re-selecting the same
+              // file still fires onChange. The import itself runs in a
+              // microtask and never blocks render.
               e.currentTarget.value = "";
+              void importCsvFile(file);
             }}
           />
         </label>

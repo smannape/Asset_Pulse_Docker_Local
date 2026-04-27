@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Asset, SavedScenario, ScenarioInputs } from "../lib/api";
 
 export const DEFAULT_INPUTS: ScenarioInputs = {
@@ -71,16 +71,21 @@ export function ScenarioForm({
 }) {
   const [selected, setSelected] = useState<string>("");
 
-  useEffect(() => {
-    if (selected === "" || selected === "custom") return;
-    if (selected.startsWith("scenario:")) {
-      const id = Number(selected.slice("scenario:".length));
+  // Hydration is triggered explicitly from the dropdown's onChange — never from
+  // a useEffect on `scenarios` / `assets`. Otherwise refreshAssets() after a
+  // Run would re-fire the effect (new array identity) and overwrite the just-
+  // returned result/inputs, making the result panel flash blank.
+  const handleSelect = (next: string) => {
+    setSelected(next);
+    if (next === "" || next === "custom") return;
+    if (next.startsWith("scenario:")) {
+      const id = Number(next.slice("scenario:".length));
       const sc = scenarios.find((x) => x.id === id);
       if (sc && onLoadScenario) onLoadScenario(sc);
       return;
     }
-    onLoadAsset(Number(selected));
-  }, [selected, onLoadAsset, onLoadScenario, scenarios]);
+    onLoadAsset(Number(next));
+  };
 
   const set = <K extends keyof ScenarioInputs>(k: K, v: ScenarioInputs[K]) =>
     onChange({ ...inputs, [k]: v });
@@ -123,7 +128,7 @@ export function ScenarioForm({
             (base assets + saved scenarios/cases — pick to hydrate inputs)
           </span>
         </span>
-        <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+        <select value={selected} onChange={(e) => handleSelect(e.target.value)}>
           <option value="">— select —</option>
           <option value="custom">Custom (use current values)</option>
           {assets.length > 0 && (
