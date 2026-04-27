@@ -134,6 +134,18 @@ def init_db() -> None:
     _migrate_columns()
 
 
+def ensure_scenario_schema() -> None:
+    """Idempotent, cheap schema check used at request time.
+
+    On long-running containers built before the CSV-import / breakeven release,
+    the new columns may still be missing on the existing volume even after
+    startup migrations. Calling this from the persist path guarantees a clean
+    insert without forcing the user to wipe their DB.
+    """
+    Base.metadata.create_all(engine)
+    _migrate_columns()
+
+
 def _migrate_columns() -> None:
     """Idempotent column adds for upgrades from earlier schemas.
 

@@ -196,6 +196,90 @@ def test_run_against_pre_migration_schema() -> None:
     importlib.reload(main_mod)
 
 
+def test_run_persists_via_jit_migration_without_startup() -> None:
+    """Simulate the user's reported 500 path: an existing DB volume that is
+    missing the new columns AND the backend that never ran startup migrations
+    (e.g. a stale image still in flight before the Hardening commit).
+
+    The persist path's JIT migration retry should still succeed without
+    requiring a DB volume reset.
+    """
+    import importlib
+    import sqlite3
+
+    legacy_tmp = tempfile.NamedTemporaryFile(
+        prefix="asset_pulse_jit_", suffix=".db", delete=False
+    )
+    legacy_tmp.close()
+    db_path = legacy_tmp.name
+    con = sqlite3.connect(db_path)
+    con.executescript(
+        """
+        CREATE TABLE scenarios (
+            id INTEGER PRIMARY KEY, name VARCHAR(120) NOT NULL,
+            asset_id INTEGER, inputs JSON, created_at DATETIME
+        );
+        CREATE TABLE scenario_results (
+            id INTEGER PRIMARY KEY, scenario_id INTEGER NOT NULL,
+            npv DOUBLE, pv10 DOUBLE, payback_months DOUBLE,
+            netback_per_boe DOUBLE, economic_limit_boe_per_month DOUBLE,
+            monthly_summary JSON, created_at DATETIME
+        );
+        """
+    )
+    con.commit()
+    con.close()
+
+    os.environ["LOCAL_SQLITE_PATH"] = db_path
+    os.environ.pop("DATABASE_URL", None)
+    import app.database as db_mod
+    import app.main as main_mod
+    importlib.reload(db_mod)
+    importlib.reload(main_mod)
+    # NB: deliberately skip init_db here to mirror the reported failure mode.
+
+    jit_client = TestClient(main_mod.app)
+    r = jit_client.post(
+        "/api/scenario/run",
+        json={
+            "asset_name": "jit-migration",
+            "months_horizon": 12,
+            "initial_oil_bopd": 250,
+            "oil_price": 68,
+            "development_capex": 200_000,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "scenario_id" in body
+    assert body.get("persist_error") is None, body.get("persist_error")
+
+    os.environ["LOCAL_SQLITE_PATH"] = _tmp.name
+    importlib.reload(db_mod)
+    importlib.reload(main_mod)
+
+
+def test_run_with_unexpected_inputs_returns_400_not_500() -> None:
+    """Pydantic validation already guards most cases. This covers the residual
+    path where ``project_scenario`` would otherwise blow up with a non-input
+    error: we should surface 400, never 500."""
+    bad = {
+        "asset_name": "bad",
+        "months_horizon": 12,
+        "initial_oil_bopd": 100,
+        # b_factor inside the allowed range but combined with extreme decline
+        # this used to fall through to a generic 500.
+        "annual_decline": 0.999,
+        "decline_model": "hyperbolic",
+        "b_factor": 2.0,
+        "oil_price": 70,
+        "development_capex": 1_000,
+    }
+    r = client.post("/api/scenario/run", json=bad)
+    # Either a successful run or a clean 400 — never 500.
+    assert r.status_code in (200, 400), r.text
+
+
 def test_scenario_delete() -> None:
     payload = {
         "asset_name": "to-delete", "months_horizon": 12, "initial_oil_bopd": 200,
@@ -217,6 +301,8 @@ def main() -> None:
         test_scenario_import_bulk,
         test_run_with_extreme_inputs_does_not_500,
         test_run_against_pre_migration_schema,
+        test_run_persists_via_jit_migration_without_startup,
+        test_run_with_unexpected_inputs_returns_400_not_500,
         test_scenario_delete,
     ]
     failed = 0

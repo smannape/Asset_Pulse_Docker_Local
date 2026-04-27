@@ -13,7 +13,8 @@ from sqlalchemy import func, select
 
 from .database import (
     Asset, CostProfile, DecisionMatrixRun, Event, PriceDeck, Scenario,
-    ScenarioResult, db_url_redacted, get_session, init_db, is_postgres,
+    ScenarioResult, db_url_redacted, ensure_scenario_schema, get_session,
+    init_db, is_postgres,
 )
 
 logger = logging.getLogger("asset_pulse")
@@ -237,30 +238,66 @@ def run_scenario(inputs: ScenarioInputs, persist: bool = True, name: str | None 
     payload = inputs.model_dump()
     try:
         result = scenario.project_scenario(payload)
-    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+    except (ValueError, ZeroDivisionError, OverflowError, TypeError, KeyError) as exc:
         # Bad/extreme inputs — surface a 400 instead of a generic 500.
         raise HTTPException(status_code=400, detail=f"invalid scenario inputs: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — last-resort guardrail
+        logger.exception("project_scenario crashed unexpectedly")
+        raise HTTPException(status_code=400, detail=f"scenario calculation failed: {exc}") from exc
 
     if persist:
+        scenario_id, breakeven, persist_error = _try_persist(
+            name=name or f"{result['asset_name']} - run",
+            payload=payload,
+            result=result,
+            asset_alias=payload.get("asset_name"),
+            asset_id=None,
+            source="api",
+        )
+        if scenario_id is not None:
+            result["scenario_id"] = scenario_id
+            result["breakeven_oil_price"] = breakeven
+        if persist_error:
+            result["persist_error"] = persist_error
+    return _sanitize_floats(result)
+
+
+def _try_persist(
+    *, name: str, payload: dict, result: dict,
+    asset_alias: str | None, asset_id: int | None, source: str,
+) -> tuple[int | None, float | None, str | None]:
+    """Persist with a JIT-migration retry.
+
+    First attempt uses the current schema. If it fails with what looks like a
+    schema-drift error (missing column / missing table), we run
+    ``ensure_scenario_schema`` and retry exactly once. Any further failure is
+    surfaced as a ``persist_error`` field on the response so the user still
+    gets their KPIs.
+    """
+    try:
+        with get_session() as s:
+            sid, be = _persist_scenario_result(
+                s, name=name, payload=payload, result=result,
+                asset_alias=asset_alias, asset_id=asset_id, source=source,
+            )
+            return sid, be, None
+    except Exception as first_exc:  # noqa: BLE001
+        logger.warning("scenario persist failed (will retry after JIT migration): %s", first_exc)
+        try:
+            ensure_scenario_schema()
+        except Exception as mig_exc:  # noqa: BLE001
+            logger.exception("JIT scenario schema migration failed")
+            return None, None, f"persist failed: {first_exc}; migration failed: {mig_exc}"
         try:
             with get_session() as s:
-                scenario_id, breakeven = _persist_scenario_result(
-                    s,
-                    name=name or f"{result['asset_name']} - run",
-                    payload=payload,
-                    result=result,
-                    asset_alias=payload.get("asset_name"),
-                    asset_id=None,
-                    source="api",
+                sid, be = _persist_scenario_result(
+                    s, name=name, payload=payload, result=result,
+                    asset_alias=asset_alias, asset_id=asset_id, source=source,
                 )
-                result["scenario_id"] = scenario_id
-                result["breakeven_oil_price"] = breakeven
+                return sid, be, None
         except Exception as exc:  # noqa: BLE001
-            # Persistence is best-effort. A schema mismatch on an old DB
-            # volume should not block the user from getting their numbers.
-            logger.exception("scenario persist failed; returning result without saving")
-            result["persist_error"] = str(exc)
-    return _sanitize_floats(result)
+            logger.exception("scenario persist failed after JIT migration")
+            return None, None, str(exc)
 
 
 @app.post("/api/scenarios/import")
