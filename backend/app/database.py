@@ -131,8 +131,17 @@ class DecisionMatrixRun(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
-    # Lightweight, idempotent migrations for columns added after the initial
-    # schema. Both Postgres 14+ and SQLite support ADD COLUMN IF NOT EXISTS.
+    _migrate_columns()
+
+
+def _migrate_columns() -> None:
+    """Idempotent column adds for upgrades from earlier schemas.
+
+    Runs each ALTER on its own short-lived connection so a failure on one
+    column never poisons the others (Postgres aborts a whole transaction on
+    error). For SQLite versions older than 3.35 we fall back to checking
+    PRAGMA before adding the column.
+    """
     _add_columns: list[tuple[str, str, str]] = [
         ("scenarios", "asset_alias", "VARCHAR(160)"),
         ("scenarios", "source", "VARCHAR(40)"),
@@ -140,23 +149,41 @@ def init_db() -> None:
         ("scenario_results", "total_boe", "DOUBLE PRECISION"),
         ("scenario_results", "fiscal_regime", "VARCHAR(40)"),
     ]
-    with engine.begin() as conn:
-        for table, col, coltype in _add_columns:
-            try:
+    is_sqlite = DATABASE_URL.startswith("sqlite")
+    for table, col, coltype in _add_columns:
+        # Try the standard, atomic path first.
+        added = False
+        try:
+            with engine.begin() as conn:
                 conn.exec_driver_sql(
                     f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}"
                 )
-            except Exception:
-                # Older SQLite (<3.35) lacks IF NOT EXISTS; check pragma instead.
-                try:
+            added = True
+        except Exception:
+            added = False
+        if added:
+            continue
+        # Fallback: introspect existing columns, then add only if missing.
+        try:
+            with engine.begin() as conn:
+                if is_sqlite:
                     rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
                     existing = {r[1] for r in rows}
-                    if col not in existing:
-                        conn.exec_driver_sql(
-                            f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"
-                        )
-                except Exception:
-                    pass
+                else:
+                    rows = conn.exec_driver_sql(
+                        "SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name = '{table}'"
+                    ).fetchall()
+                    existing = {r[0] for r in rows}
+                if col not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"
+                    )
+        except Exception:
+            # Final swallow: never let a migration failure crash startup.
+            # /api/scenario/run will surface a clearer error if the column is
+            # actually missing at insert time.
+            pass
 
 
 @contextmanager

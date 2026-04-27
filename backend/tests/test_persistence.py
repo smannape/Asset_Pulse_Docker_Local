@@ -113,6 +113,89 @@ def test_scenario_import_bulk() -> None:
     assert any(s["result"] and s["result"].get("breakeven_oil_price") is not None for s in csv_imports)
 
 
+def test_run_with_extreme_inputs_does_not_500() -> None:
+    """NaN/Inf or extreme inputs should not crash the endpoint.
+
+    NPV may legitimately come back as None when sanitised, but the call must
+    return 200 and an integer scenario_id rather than a 500.
+    """
+    payload = {
+        "asset_name": "extreme",
+        "months_horizon": 6,
+        "initial_oil_bopd": 1e9,  # absurdly high — could overflow downstream
+        "annual_decline": 0.0,
+        "oil_price": 1e6,
+        "fixed_opex_per_month": 0,
+        "development_capex": 0,
+    }
+    r = client.post("/api/scenario/run", json=payload)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "scenario_id" in body
+
+
+def test_run_against_pre_migration_schema() -> None:
+    """Simulate an existing Docker volume on the pre-CSV-import schema.
+
+    init_db() must add the new columns (asset_alias, source,
+    breakeven_oil_price, total_boe, fiscal_regime) so that
+    /api/scenario/run can persist successfully.
+    """
+    import importlib
+    import sqlite3
+
+    legacy_tmp = tempfile.NamedTemporaryFile(
+        prefix="asset_pulse_legacy_", suffix=".db", delete=False
+    )
+    legacy_tmp.close()
+    db_path = legacy_tmp.name
+    con = sqlite3.connect(db_path)
+    con.executescript(
+        """
+        CREATE TABLE scenarios (
+            id INTEGER PRIMARY KEY, name VARCHAR(120) NOT NULL,
+            asset_id INTEGER, inputs JSON, created_at DATETIME
+        );
+        CREATE TABLE scenario_results (
+            id INTEGER PRIMARY KEY, scenario_id INTEGER NOT NULL,
+            npv DOUBLE, pv10 DOUBLE, payback_months DOUBLE,
+            netback_per_boe DOUBLE, economic_limit_boe_per_month DOUBLE,
+            monthly_summary JSON, created_at DATETIME
+        );
+        """
+    )
+    con.commit()
+    con.close()
+
+    # Re-import the app module against the legacy DB.
+    os.environ["LOCAL_SQLITE_PATH"] = db_path
+    os.environ.pop("DATABASE_URL", None)
+    import app.database as db_mod
+    import app.main as main_mod
+    importlib.reload(db_mod)
+    importlib.reload(main_mod)
+    db_mod.init_db()
+
+    legacy_client = TestClient(main_mod.app)
+    r = legacy_client.post(
+        "/api/scenario/run",
+        json={
+            "asset_name": "legacy",
+            "months_horizon": 12,
+            "initial_oil_bopd": 200,
+            "oil_price": 70,
+            "development_capex": 100_000,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert "scenario_id" in r.json()
+
+    # Restore the original test DB so the rest of the suite continues to work.
+    os.environ["LOCAL_SQLITE_PATH"] = _tmp.name
+    importlib.reload(db_mod)
+    importlib.reload(main_mod)
+
+
 def test_scenario_delete() -> None:
     payload = {
         "asset_name": "to-delete", "months_horizon": 12, "initial_oil_bopd": 200,
@@ -132,6 +215,8 @@ def main() -> None:
         test_run_persists_by_default,
         test_run_persist_false_does_not_save,
         test_scenario_import_bulk,
+        test_run_with_extreme_inputs_does_not_500,
+        test_run_against_pre_migration_schema,
         test_scenario_delete,
     ]
     failed = 0

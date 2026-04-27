@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import os
 from typing import Any
 
@@ -13,6 +15,29 @@ from .database import (
     Asset, CostProfile, DecisionMatrixRun, Event, PriceDeck, Scenario,
     ScenarioResult, db_url_redacted, get_session, init_db, is_postgres,
 )
+
+logger = logging.getLogger("asset_pulse")
+
+
+def _sanitize_floats(obj: Any) -> Any:
+    """Recursively replace NaN/Inf floats with None so the result is
+    JSON-serialisable and safe for JSONB columns.
+
+    Without this, an inf/NaN slipping through (e.g. from extreme inputs or
+    a divide producing inf) bubbles up as a generic 500 from FastAPI's JSON
+    encoder.
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_floats(v) for v in obj)
+    return obj
 from .modules import cost_models, decision_matrix, economics, scenario, uncertainty
 from .schemas import (
     DecisionMatrixRequest, EventImpactRequest, MonteCarloRequest,
@@ -135,32 +160,52 @@ def _persist_scenario_result(
         asset_id=asset_id,
         asset_alias=asset_alias,
         source=source,
-        inputs=payload,
+        inputs=_sanitize_floats(payload),
     )
     s.add(sc)
     s.flush()
     kpis = result["kpis"]
     el = kpis.get("economic_limit") or {}
-    breakeven = scenario.breakeven_oil_price(payload) if compute_breakeven else None
+    breakeven: float | None = None
+    if compute_breakeven:
+        try:
+            breakeven = scenario.breakeven_oil_price(payload)
+        except Exception as exc:  # noqa: BLE001 — never block persistence on this
+            logger.warning("breakeven_oil_price failed for %s: %s", name, exc)
+            breakeven = None
+    monthly_summary = _sanitize_floats({
+        "months": result["monthly"]["months"],
+        "free_cash_flow": result["monthly"]["free_cash_flow"],
+        "net_revenue": result["monthly"]["net_revenue"],
+        "opex": result["monthly"]["opex"],
+    })
     sr = ScenarioResult(
         scenario_id=sc.id,
-        npv=kpis.get("npv"),
-        pv10=kpis.get("pv10"),
-        payback_months=kpis.get("payback_months"),
-        netback_per_boe=kpis.get("netback_per_boe"),
-        economic_limit_boe_per_month=el.get("economic_limit_boe_per_month"),
-        breakeven_oil_price=breakeven,
-        total_boe=kpis.get("total_boe"),
+        npv=_safe_float(kpis.get("npv")),
+        pv10=_safe_float(kpis.get("pv10")),
+        payback_months=_safe_float(kpis.get("payback_months")),
+        netback_per_boe=_safe_float(kpis.get("netback_per_boe")),
+        economic_limit_boe_per_month=_safe_float(el.get("economic_limit_boe_per_month")),
+        breakeven_oil_price=_safe_float(breakeven),
+        total_boe=_safe_float(kpis.get("total_boe")),
         fiscal_regime=kpis.get("fiscal_regime"),
-        monthly_summary={
-            "months": result["monthly"]["months"],
-            "free_cash_flow": result["monthly"]["free_cash_flow"],
-            "net_revenue": result["monthly"]["net_revenue"],
-            "opex": result["monthly"]["opex"],
-        },
+        monthly_summary=monthly_summary,
     )
     s.add(sr)
     return sc.id, breakeven
+
+
+def _safe_float(v: Any) -> float | None:
+    """Coerce to float, mapping NaN/Inf/non-numeric to None."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f
 
 
 def _resolve_asset_id(s, alias: str | None) -> int | None:
@@ -190,22 +235,32 @@ def run_scenario(inputs: ScenarioInputs, persist: bool = True, name: str | None 
     """Run a scenario. By default, persists to DB so it is visible in the
     Scenario Compare tab. Pass persist=false to compute without saving."""
     payload = inputs.model_dump()
-    result = scenario.project_scenario(payload)
+    try:
+        result = scenario.project_scenario(payload)
+    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+        # Bad/extreme inputs — surface a 400 instead of a generic 500.
+        raise HTTPException(status_code=400, detail=f"invalid scenario inputs: {exc}") from exc
 
     if persist:
-        with get_session() as s:
-            scenario_id, breakeven = _persist_scenario_result(
-                s,
-                name=name or f"{result['asset_name']} - run",
-                payload=payload,
-                result=result,
-                asset_alias=payload.get("asset_name"),
-                asset_id=None,
-                source="api",
-            )
-            result["scenario_id"] = scenario_id
-            result["breakeven_oil_price"] = breakeven
-    return result
+        try:
+            with get_session() as s:
+                scenario_id, breakeven = _persist_scenario_result(
+                    s,
+                    name=name or f"{result['asset_name']} - run",
+                    payload=payload,
+                    result=result,
+                    asset_alias=payload.get("asset_name"),
+                    asset_id=None,
+                    source="api",
+                )
+                result["scenario_id"] = scenario_id
+                result["breakeven_oil_price"] = breakeven
+        except Exception as exc:  # noqa: BLE001
+            # Persistence is best-effort. A schema mismatch on an old DB
+            # volume should not block the user from getting their numbers.
+            logger.exception("scenario persist failed; returning result without saving")
+            result["persist_error"] = str(exc)
+    return _sanitize_floats(result)
 
 
 @app.post("/api/scenarios/import")
