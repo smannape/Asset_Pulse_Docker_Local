@@ -17,6 +17,7 @@ import {
   apiGet,
   apiPost,
   type Asset,
+  type SavedScenario,
   type ScenarioInputs,
   type ScenarioResult,
 } from "./lib/api";
@@ -27,8 +28,7 @@ type View =
   | "events"
   | "matrix"
   | "assets"
-  | "compare"
-  | "exchange";
+  | "compare";
 type Theme = "light" | "dark";
 
 export default function App() {
@@ -37,6 +37,7 @@ export default function App() {
   const [inputs, setInputs] = useState<ScenarioInputs>(DEFAULT_INPUTS);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [health, setHealth] = useState<{ status: string; database: string } | null>(null);
@@ -51,8 +52,12 @@ export default function App() {
   const refreshAssets = useCallback(async () => {
     setAssetsLoading(true);
     try {
-      const a = await apiGet<Asset[]>("/api/assets");
+      const [a, sc] = await Promise.all([
+        apiGet<Asset[]>("/api/assets"),
+        apiGet<SavedScenario[]>("/api/scenarios?limit=100").catch(() => [] as SavedScenario[]),
+      ]);
       setAssets(a);
+      setScenarios(sc);
     } catch {
       // keep prior list — refresh is best-effort
     } finally {
@@ -118,6 +123,11 @@ export default function App() {
     [assets]
   );
 
+  const onLoadSavedScenario = useCallback((sc: SavedScenario) => {
+    setInputs({ ...DEFAULT_INPUTS, ...sc.inputs });
+    setResult(null);
+  }, []);
+
   const baseMonthlyCf = useMemo(() => {
     if (!result) return null;
     const fcf = result.monthly.free_cash_flow.slice(1); // exclude t=0 capex
@@ -134,7 +144,6 @@ export default function App() {
     { id: "matrix", label: "Decision Matrix", key: "04" },
     { id: "assets", label: "Assets", key: "05" },
     { id: "compare", label: "Scenario Compare", key: "06" },
-    { id: "exchange", label: "CSV Exchange", key: "07" },
   ];
 
   return (
@@ -195,6 +204,9 @@ export default function App() {
           api: <span className="accent-text">{API_BASE || "/api (relative)"}</span>
           <br />
           db: <span className="accent-text">{health?.database ?? "unknown"}</span>
+          <br />
+          assets: <span className="accent-text">{assets.length}</span> · scenarios:{" "}
+          <span className="accent-text">{scenarios.length}</span>
         </div>
       </aside>
 
@@ -218,7 +230,9 @@ export default function App() {
                   onSubmit={runScenario}
                   loading={running}
                   assets={assets}
+                  scenarios={scenarios}
                   onLoadAsset={onLoadAsset}
+                  onLoadScenario={onLoadSavedScenario}
                 />
               </Panel>
               <div>
@@ -233,26 +247,89 @@ export default function App() {
                 </Panel>
               </div>
             </div>
+
+            <Panel
+              title="Upload data — CSV import & save/run"
+              meta={
+                <span className="muted">
+                  Upload → approve rows → Save &amp; Run · saved cases appear in the dropdown above
+                </span>
+              }
+            >
+              <DataExchange
+                inputs={inputs}
+                onImportInputs={setInputs}
+                onLoadScenario={(next) => {
+                  setInputs(next);
+                  setResult(null);
+                }}
+                onScenariosSaved={() => {
+                  bumpRefreshKey();
+                  void refreshAssets();
+                }}
+                result={result}
+                assets={assets}
+              />
+            </Panel>
           </>
         )}
 
         {view === "sensitivity" && (
           <>
             <Panel
-              title="Tornado sensitivity"
-              meta={<span className="muted">±% swings on key drivers · ranks by NPV swing</span>}
+              title={`Tornado sensitivity — ${inputs.asset_name}`}
+              meta={
+                <span className="muted">
+                  ±% swings on key drivers · ranks by NPV swing
+                </span>
+              }
             >
+              <div
+                className="ln"
+                style={{
+                  marginBottom: 8,
+                  fontSize: 12,
+                  color: "var(--accent)",
+                  fontWeight: 600,
+                }}
+              >
+                Tornado sensitivity for: {inputs.asset_name}
+                {result?.scenario_id ? ` · scenario #${result.scenario_id}` : ""}
+              </div>
               <Tornado inputs={inputs} />
             </Panel>
-            <Panel title="Notes">
-              <div className="muted" style={{ fontSize: 12, lineHeight: 1.6 }}>
-                Each row varies one input by the configured ±%; bars show the NPV delta vs base. Largest swing
-                is the dominant driver. Run Monte Carlo below for P10/P50/P90 economics under price, CAPEX and
-                OPEX uncertainty.
+            <Panel title="Why run a tornado sensitivity?">
+              <div className="muted" style={{ fontSize: 12, lineHeight: 1.65 }}>
+                A tornado sensitivity varies <b>one assumption at a time</b> by a
+                fixed ±% (oil price, decline, CAPEX, OPEX, water cut, discount
+                rate, etc.) while holding everything else constant, and ranks
+                each input by the resulting <b>NPV swing</b>. The bar shown for
+                each variable is its delta vs the base NPV; the longest bar is
+                the dominant value driver.
+                <br />
+                <br />
+                <b>What it achieves:</b>
+                <ul style={{ margin: "6px 0 0 18px" }}>
+                  <li>
+                    Identifies the <b>key economic levers</b> for the selected
+                    asset/scenario so capital and OPEX attention go to inputs
+                    that actually move NPV.
+                  </li>
+                  <li>
+                    Surfaces <b>risk controls</b> — variables with large
+                    downside swings are candidates for hedging, contracting, or
+                    tighter operational monitoring.
+                  </li>
+                  <li>
+                    Provides a quick <b>sanity check</b> before committing to
+                    Monte Carlo: if a driver doesn't move NPV here, modeling its
+                    distribution is rarely worth the effort.
+                  </li>
+                </ul>
               </div>
             </Panel>
             <Panel
-              title="Monte Carlo uncertainty"
+              title={`Monte Carlo uncertainty — ${inputs.asset_name}`}
               meta={<span className="muted">Triangular drivers · P10/P50/P90 NPV</span>}
             >
               <MonteCarlo inputs={inputs} />
@@ -284,7 +361,12 @@ export default function App() {
         {view === "assets" && (
           <Panel
             title="Asset registry"
-            meta={<span className="muted">{assets.length} loaded</span>}
+            meta={
+              <span className="muted">
+                {assets.length} asset{assets.length === 1 ? "" : "s"} · {scenarios.length} saved
+                scenario{scenarios.length === 1 ? "" : "s"}
+              </span>
+            }
           >
             <div
               className="row"
@@ -296,7 +378,7 @@ export default function App() {
                 disabled={assetsLoading}
                 title="Reload assets and any new scenario-derived cases"
               >
-                {assetsLoading ? "Refreshing..." : "Refresh cases"}
+                {assetsLoading ? "Refreshing..." : "Refresh assets & cases"}
               </button>
               <span className="muted" style={{ fontSize: 11 }}>
                 Cases also refresh automatically after a scenario run or CSV save.
@@ -319,30 +401,10 @@ export default function App() {
           >
             <ScenarioCompare
               refreshKey={refreshKey}
-              onScenarioDeleted={() => bumpRefreshKey()}
-            />
-          </Panel>
-        )}
-
-        {view === "exchange" && (
-          <Panel
-            title="CSV exchange"
-            meta={<span className="muted">Excel handoff · scenario/cash-flow exports</span>}
-          >
-            <DataExchange
-              inputs={inputs}
-              onImportInputs={setInputs}
-              onLoadScenario={(next) => {
-                setInputs(next);
-                setResult(null);
-                setView("scenario");
-              }}
-              onScenariosSaved={() => {
+              onScenarioDeleted={() => {
                 bumpRefreshKey();
                 void refreshAssets();
               }}
-              result={result}
-              assets={assets}
             />
           </Panel>
         )}

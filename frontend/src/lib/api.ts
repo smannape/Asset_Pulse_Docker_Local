@@ -23,6 +23,19 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
   return res.json();
 }
 
+export async function apiPostBlob(path: string, body: unknown): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`POST ${path} failed: ${res.status} ${text}`);
+  }
+  return res.blob();
+}
+
 export async function apiDelete<T = unknown>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
   if (!res.ok) {

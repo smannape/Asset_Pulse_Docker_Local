@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Asset, ScenarioInputs } from "../lib/api";
+import type { Asset, SavedScenario, ScenarioInputs } from "../lib/api";
 
 export const DEFAULT_INPUTS: ScenarioInputs = {
   asset_name: "Custom well",
@@ -54,21 +54,31 @@ export function ScenarioForm({
   onSubmit,
   loading,
   assets,
+  scenarios = [],
   onLoadAsset,
+  onLoadScenario,
 }: {
   inputs: ScenarioInputs;
   onChange: (v: ScenarioInputs) => void;
   onSubmit: () => void;
   loading: boolean;
   assets: Asset[];
+  scenarios?: SavedScenario[];
   onLoadAsset: (id: number | null) => void;
+  onLoadScenario?: (s: SavedScenario) => void;
 }) {
   const [selected, setSelected] = useState<string>("");
 
   useEffect(() => {
     if (selected === "" || selected === "custom") return;
+    if (selected.startsWith("scenario:")) {
+      const id = Number(selected.slice("scenario:".length));
+      const sc = scenarios.find((x) => x.id === id);
+      if (sc && onLoadScenario) onLoadScenario(sc);
+      return;
+    }
     onLoadAsset(Number(selected));
-  }, [selected, onLoadAsset]);
+  }, [selected, onLoadAsset, onLoadScenario, scenarios]);
 
   const set = <K extends keyof ScenarioInputs>(k: K, v: ScenarioInputs[K]) =>
     onChange({ ...inputs, [k]: v });
@@ -104,15 +114,36 @@ export function ScenarioForm({
       }}
     >
       <label className="full" style={{ marginBottom: 6, display: "block" }}>
-        <span className="muted" style={{ fontSize: 11 }}>Load asset profile</span>
+        <span className="muted" style={{ fontSize: 11 }}>
+          Load asset profile{" "}
+          <span style={{ opacity: 0.7 }}>
+            (base assets + saved scenarios/cases — pick to hydrate inputs)
+          </span>
+        </span>
         <select value={selected} onChange={(e) => setSelected(e.target.value)}>
           <option value="">— select —</option>
           <option value="custom">Custom (use current values)</option>
-          {assets.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} [{a.asset_type}]
-            </option>
-          ))}
+          {assets.length > 0 && (
+            <optgroup label="Base assets">
+              {assets.map((a) => (
+                <option key={`asset-${a.id}`} value={String(a.id)}>
+                  {a.name} [{a.asset_type}]
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {scenarios.length > 0 && (
+            <optgroup label="Saved scenarios / cases">
+              {scenarios.map((sc) => {
+                const alias = sc.asset_alias ?? sc.inputs.asset_name;
+                return (
+                  <option key={`scenario-${sc.id}`} value={`scenario:${sc.id}`}>
+                    {sc.name} — {alias} [scenario #{sc.id}]
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
       </label>
 

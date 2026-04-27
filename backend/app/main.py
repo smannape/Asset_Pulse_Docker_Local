@@ -9,6 +9,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from .database import (
@@ -39,7 +41,7 @@ def _sanitize_floats(obj: Any) -> Any:
     if isinstance(obj, tuple):
         return tuple(_sanitize_floats(v) for v in obj)
     return obj
-from .modules import cost_models, decision_matrix, economics, scenario, uncertainty
+from .modules import cost_models, decision_matrix, economics, report, scenario, uncertainty
 from .schemas import (
     DecisionMatrixRequest, EventImpactRequest, MonteCarloRequest,
     ScenarioImportRequest, ScenarioInputs, TornadoRequest,
@@ -377,6 +379,59 @@ def list_scenarios(limit: int = 100) -> list[dict]:
                 } if res else None,
             })
     return out
+
+
+class ScenarioReportRequest(BaseModel):
+    scenario_ids: list[int] | None = None
+
+
+def _scenarios_for_report(scenario_ids: list[int] | None) -> list[dict]:
+    out: list[dict] = []
+    with get_session() as s:
+        q = select(Scenario)
+        if scenario_ids:
+            q = q.where(Scenario.id.in_(scenario_ids))
+        q = q.order_by(Scenario.id.desc()).limit(200)
+        for sc in s.execute(q).scalars().all():
+            res = s.execute(
+                select(ScenarioResult).where(ScenarioResult.scenario_id == sc.id)
+            ).scalar_one_or_none()
+            out.append({
+                "id": sc.id, "name": sc.name, "asset_id": sc.asset_id,
+                "asset_alias": sc.asset_alias, "source": sc.source,
+                "created_at": sc.created_at.isoformat() if sc.created_at else None,
+                "inputs": sc.inputs,
+                "result": {
+                    "npv": res.npv, "pv10": res.pv10,
+                    "payback_months": res.payback_months,
+                    "netback_per_boe": res.netback_per_boe,
+                    "economic_limit_boe_per_month": res.economic_limit_boe_per_month,
+                    "breakeven_oil_price": res.breakeven_oil_price,
+                    "total_boe": res.total_boe,
+                    "fiscal_regime": res.fiscal_regime,
+                } if res else None,
+            })
+    if scenario_ids:
+        order = {sid: i for i, sid in enumerate(scenario_ids)}
+        out.sort(key=lambda s_: order.get(s_["id"], 1_000_000))
+    return out
+
+
+@app.post("/api/scenarios/report.pdf")
+def scenarios_report_pdf(req: ScenarioReportRequest | None = None) -> Response:
+    """Generate a PDF report covering the requested scenarios. With no body,
+    reports on every saved scenario (most recent first)."""
+    ids = req.scenario_ids if req and req.scenario_ids else None
+    scenarios = _scenarios_for_report(ids)
+    if not scenarios:
+        raise HTTPException(status_code=404, detail="no scenarios available for report")
+    pdf_bytes = report.build_scenario_comparison_pdf(scenarios)
+    filename = "asset-pulse-scenario-report.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.delete("/api/scenarios/{scenario_id}")

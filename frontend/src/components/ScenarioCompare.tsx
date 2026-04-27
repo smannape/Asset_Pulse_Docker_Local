@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiDelete, apiGet, type SavedScenario } from "../lib/api";
+import { apiDelete, apiGet, apiPostBlob, type SavedScenario } from "../lib/api";
 import { fmtMonths, fmtNum, fmtUSD } from "../lib/format";
 
 type SortKey = "id" | "npv" | "breakeven" | "payback";
@@ -16,6 +16,8 @@ export function ScenarioCompare({
   const [err, setErr] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [filter, setFilter] = useState<string>("");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportMsg, setReportMsg] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -75,6 +77,31 @@ export function ScenarioCompare({
     return m;
   }, [filtered]);
 
+  const downloadReport = async () => {
+    if (filtered.length === 0) return;
+    setReportLoading(true);
+    setReportMsg(null);
+    setErr(null);
+    try {
+      const ids = filtered.map((it) => it.id);
+      const blob = await apiPostBlob("/api/scenarios/report.pdf", { scenario_ids: ids });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.href = url;
+      a.download = `asset-pulse-scenario-report-${stamp}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setReportMsg(`Report generated for ${ids.length} scenario${ids.length === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     try {
       await apiDelete(`/api/scenarios/${id}`);
@@ -118,7 +145,22 @@ export function ScenarioCompare({
                 <option value="payback">Payback (fast → slow)</option>
               </select>
             </label>
+            <button
+              onClick={() => void downloadReport()}
+              disabled={reportLoading || filtered.length === 0}
+              title="Generate a PDF report covering the currently filtered scenarios"
+            >
+              {reportLoading ? "Building PDF..." : "Generate PDF report"}
+            </button>
           </div>
+          {reportMsg && (
+            <div
+              className="ln"
+              style={{ color: "var(--good)", fontSize: 12, marginBottom: 8 }}
+            >
+              {reportMsg}
+            </div>
+          )}
 
           {err && (
             <div className="ln" style={{ color: "var(--bad)", fontSize: 12 }}>

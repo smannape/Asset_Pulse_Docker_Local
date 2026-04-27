@@ -280,6 +280,33 @@ def test_run_with_unexpected_inputs_returns_400_not_500() -> None:
     assert r.status_code in (200, 400), r.text
 
 
+def test_scenarios_report_pdf() -> None:
+    # Ensure there are at least two scenarios saved to compare in the PDF.
+    payload_a = {
+        "asset_name": "report-A", "months_horizon": 24, "initial_oil_bopd": 400,
+        "annual_decline": 0.30, "oil_price": 70, "fixed_opex_per_month": 8000,
+        "oil_var_per_bbl": 4, "development_capex": 1_500_000,
+    }
+    payload_b = {
+        "asset_name": "report-B", "months_horizon": 24, "initial_oil_bopd": 600,
+        "annual_decline": 0.40, "oil_price": 75, "fixed_opex_per_month": 9000,
+        "oil_var_per_bbl": 4, "development_capex": 2_500_000,
+    }
+    a = client.post("/api/scenario/run", json=payload_a).json()
+    b = client.post("/api/scenario/run", json=payload_b).json()
+    ids = [a["scenario_id"], b["scenario_id"]]
+
+    r = client.post("/api/scenarios/report.pdf", json={"scenario_ids": ids})
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert r.content.startswith(b"%PDF-")
+    # Should be at least a few KB — sanity bound, not exact.
+    assert len(r.content) > 2000
+
+    r2 = client.post("/api/scenarios/report.pdf", json={"scenario_ids": [10**9]})
+    assert r2.status_code == 404
+
+
 def test_scenario_delete() -> None:
     payload = {
         "asset_name": "to-delete", "months_horizon": 12, "initial_oil_bopd": 200,
@@ -303,6 +330,7 @@ def main() -> None:
         test_run_against_pre_migration_schema,
         test_run_persists_via_jit_migration_without_startup,
         test_run_with_unexpected_inputs_returns_400_not_500,
+        test_scenarios_report_pdf,
         test_scenario_delete,
     ]
     failed = 0

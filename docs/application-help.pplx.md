@@ -23,13 +23,16 @@ The top navigation switches between the main work areas:
 
 | View | Purpose |
 | --- | --- |
-| Scenario | Build and run one asset economic case. |
-| Sensitivity | Run tornado sensitivity and Monte Carlo uncertainty. |
+| Scenario | Build and run one asset economic case. **Includes the Upload data (CSV import) sub-panel** so you can upload, approve, save and auto-run scenarios in one place. |
+| Sensitivity | Run tornado sensitivity and Monte Carlo uncertainty. The header highlights which asset/scenario the tornado is currently running for. |
 | Events | Apply event impacts to a base NPV case. |
-| Decision Matrix | Rank assets for keep-online, choke-back, shut-in or restart decisions. |
-| Assets | View seeded wells, pipelines, gathering systems and facilities. Includes a Refresh cases button. |
-| Scenario Compare | Compare every saved scenario by NPV, breakeven oil, payback and EUR. |
-| CSV Exchange | Export/import assumptions and outputs. Approve/save imported rows to the database. |
+| Decision Matrix | Rank assets for keep-online, choke-back, shut-in or restart decisions. Includes an in-app explainer covering each column and recommended bounds. |
+| Assets | View seeded wells, pipelines, gathering systems and facilities. Includes a Refresh assets & cases button. |
+| Scenario Compare | Compare every saved scenario by NPV, breakeven oil, payback and EUR, and download a PDF report of the comparison. |
+
+**Note:** the previous top-level *CSV Exchange* tab has been folded into the
+Scenario tab as the **Upload data** sub-panel — there is now a single place
+to upload, approve and save/run CSVs.
 
 ### Left Command Rail
 
@@ -48,7 +51,26 @@ Use `[ DARK ]` or `[ LIGHT ]` in the top-right corner to switch between light an
 
 ## Scenario View
 
-The Scenario view is the main economic model.
+The Scenario view is the main economic model. It also hosts the **Upload data**
+sub-panel for CSV import / approve / save & run, and its `Load asset profile`
+dropdown lists both base assets and saved scenarios/cases so you can hydrate
+inputs from any prior run.
+
+### Load Asset Profile dropdown
+
+The dropdown groups options into:
+
+- **Base assets** — wells, pads, pipelines, gathering systems and facilities
+  seeded in the database. Selecting one populates the form from the asset's
+  cost profile (decline, OPEX, CAPEX rollup).
+- **Saved scenarios / cases** — every scenario stored in the database, named
+  with the saved scenario name and its asset alias (e.g. `Q1-A — asset1
+  [scenario #42]`). Selecting one rehydrates the full input set from the
+  saved JSON payload.
+
+This means uploaded CSV cases (`asset1`, `asset2`, …) appear in the dropdown
+the moment they are saved/run, so you can replay them from the Scenario tab
+without re-importing the file.
 
 ### Running a Base Case
 
@@ -143,7 +165,11 @@ The cash-flow projection panel displays monthly free cash flow and cumulative fr
 
 ## Sensitivity View
 
-The Sensitivity view contains two uncertainty tools.
+The Sensitivity view contains two uncertainty tools. The header on each panel
+**explicitly highlights which asset/scenario the analysis is currently running
+for** — e.g. `Tornado sensitivity — Eagle Ford Pad-3 Well A` plus a coloured
+caption that reads `Tornado sensitivity for: Eagle Ford Pad-3 Well A ·
+scenario #42` when a saved scenario is loaded.
 
 ### Tornado Sensitivity
 
@@ -158,6 +184,17 @@ Default drivers include:
 - OPEX multiplier.
 - Discount rate.
 - Final water cut.
+
+**Why run a tornado sensitivity?** It varies one assumption at a time by a
+fixed ±% while holding everything else constant, then ranks each input by the
+resulting NPV swing. The longest bar is the dominant driver. This achieves:
+
+- Identification of the **key economic levers** so capital and OPEX attention
+  go to inputs that actually move NPV.
+- Surfacing of **risk controls** — large downside swings flag candidates for
+  hedging, contracting, or tighter operational monitoring.
+- A quick **sanity check** before running Monte Carlo: drivers that don't move
+  NPV here rarely justify modelling their full distribution.
 
 Use this view to identify the biggest value driver before running a broader Monte Carlo simulation.
 
@@ -207,26 +244,42 @@ Use this view for “what happens if” analysis after the base case is already 
 
 ## Decision Matrix View
 
-The Decision Matrix ranks wells or assets for operational decisions.
+The Decision Matrix ranks wells or assets for operational decisions. The view
+opens with an **in-app explainer** describing the purpose of the weighted
+matrix, the meaning of every column, and the recommended bounds for each.
 
-Default decisions include:
+### What it does
 
-- Keep online.
-- Review manually.
-- Choke back.
-- Shut in.
-- Restart.
+A weighted decision matrix ranks wells/assets across operational and economic
+criteria to support **keep-online · choke-back · shut-in · restart** calls.
+Each criterion is normalised across the asset population (0–1), oriented so
+higher = better, then multiplied by its weight. The weighted score is the
+sum; a higher score favours keeping the asset online, while a high *shut-in
+pressure* (driven by avoidable OPEX and water burden) flags candidates to
+curtail.
 
-The scoring model considers:
+### Columns and recommended bounds
 
-- Monthly margin.
-- NPV if kept online.
-- Avoidable OPEX.
-- Restart payback.
-- Restart risk.
-- HBP or lease-retention risk.
-- Water burden.
-- Strategic value.
+| Column | Meaning | Direction | Recommended bounds |
+| --- | --- | --- | --- |
+| Asset | Well/pad name. | — | free text |
+| Monthly margin (USD) | Net monthly cash margin at current prices. | higher better | typical −50,000 to +250,000 USD/mo |
+| NPV keep online (USD) | Discounted NPV if the asset keeps producing through its economic life. | higher better | population-relative (no hard cap) |
+| Avoidable OPEX (USD/mo) | Fixed OPEX that disappears when shut in. | raises shut-in pressure | 0–50,000 USD/mo typical |
+| Restart payback (mo) | Months to recover restart cost. | lower better | 1–60 months |
+| Restart risk (0–1) | Probability the well does not restart cleanly. | lower better | 0.0–1.0 |
+| HBP / lease / midstream risk (0–1) | Risk of losing HBP, lease commitments or pipeline nominations. | lower better | 0.0–1.0 |
+| Water burden (0–1) | Relative water-handling/disposal load. | raises shut-in pressure | 0.0–1.0 |
+| Strategic value (0–1) | Non-economic value (data, partner, regulator, reservoir). | higher better | 0.0–1.0 |
+
+### Bounds to respect
+
+- 0–1 fields must stay between **0.0** and **1.0**.
+- Default weights sum to **1.00** (20/15/10/10/15/10/10/10) — keep custom
+  weights on a 0–1 scale and summing to ~1.
+- Currency fields have no enforced cap; the matrix re-normalises them across
+  the asset population on every score, so a single outlier compresses the
+  others.
 
 Click `Score matrix` to recompute recommendations after editing assumptions.
 
@@ -243,13 +296,19 @@ The Assets view lists seeded sample assets:
 
 Click `load` to push an asset profile into the Scenario form.
 
-### Refresh Cases
+### Refresh assets & cases
 
-The view also exposes a **Refresh cases** button. Use it when CSV imports or
-scenario runs in another tab created new cases that are not yet visible. The
-app also auto-refreshes the asset list whenever a scenario is run or saved
-through CSV Exchange — Refresh cases is the manual fallback if the
-auto-refresh missed a change because of a network blip.
+The view exposes a **Refresh assets & cases** button. The app automatically
+re-fetches `GET /api/assets` and `GET /api/scenarios?limit=100` whenever:
+
+- A scenario is run (Scenario → Run scenario).
+- One or more rows are saved/run via the Scenario tab's Upload data sub-panel.
+- A scenario is deleted from Scenario Compare.
+
+The same refresh feeds the **Load asset profile** dropdown in the Scenario
+tab, so newly imported cases (e.g. `asset1`, `asset2`) become loadable
+without a page reload. **Refresh assets & cases** is the manual fallback if
+an auto-refresh missed a change because of a network blip.
 
 In production, replace the seeded sample data with your actual AFE, LOE, production, water, facility and midstream data.
 
@@ -278,11 +337,51 @@ scenario from the database.
 Scenarios appear here automatically when:
 
 - You click **Run scenario** on the Scenario tab — runs persist by default.
-- You click **Save approved** or **Save & Run** in CSV Exchange.
+- You click **Save approved** or **Save & Run** in the Upload data sub-panel
+  on the Scenario tab.
 
-## CSV Exchange View
+### Generate PDF report
 
-The CSV Exchange view supports Excel-oriented workflows.
+A **Generate PDF report** button at the top of the Scenario Compare toolbar
+calls `POST /api/scenarios/report.pdf` with the IDs currently shown after
+filtering and sorting. The backend renders a multi-page PDF using ReportLab
+that contains:
+
+- Title `Asset Pulse Scenario Comparison Report` and a UTC generation
+  timestamp.
+- Short interpretation bullets (best/worst NPV, most resilient breakeven,
+  fastest payback).
+- A comparison table with NPV, PV-10, payback, breakeven oil and the fiscal
+  regime for every scenario.
+- Mono-spaced bar charts of NPV (signed), breakeven oil price and payback
+  months — no external image dependencies, so the PDF renders identically on
+  every Docker host.
+- A per-scenario detail page with KPIs and the key inputs (horizon, oil rate,
+  decline, oil price, dev CAPEX, discount rate).
+
+The endpoint streams `application/pdf` with a `Content-Disposition: attachment`
+header. The frontend names the download
+`asset-pulse-scenario-report-<timestamp>.pdf`. The report is generated from
+your saved scenarios only — it does not include external citations.
+
+## Upload data — CSV import sub-panel (inside Scenario tab)
+
+The CSV import workflow lives directly under the Scenario inputs / report on
+the Scenario tab. The flow is:
+
+1. Click **Import scenario CSV** and pick a one-row export or the multi-row
+   template at `examples/asset_pulse_scenario_input_template.csv`.
+2. Approve the rows by ticking checkboxes (defaults to all).
+3. Click **Save & Run** — the backend persists each row and runs the
+   economics, returning NPV and breakeven oil per row.
+4. As soon as the request completes, the Asset registry, the Scenario Compare
+   tab, and the **Load asset profile** dropdown are refreshed automatically.
+5. Upload data tab is now part of the Scenario section, exactly as the
+   workflow expects: upload → approve → save → auto-run → loadable from the
+   dropdown.
+
+The legacy top-level *CSV Exchange* tab has been removed; everything below is
+how this sub-panel behaves.
 
 ### Export Scenario Inputs
 

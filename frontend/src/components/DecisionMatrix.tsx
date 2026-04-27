@@ -80,6 +80,79 @@ export function DecisionMatrix() {
 
   return (
     <div>
+      <div
+        className="panel"
+        style={{
+          marginBottom: 10,
+          background: "var(--panel-soft, rgba(0,0,0,0.04))",
+          padding: 10,
+          fontSize: 12,
+          lineHeight: 1.6,
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+          What the weighted decision matrix does
+        </div>
+        <div className="muted">
+          Ranks wells/assets across operational and economic criteria to support{" "}
+          <b>keep-online · choke-back · shut-in · restart</b> calls. Each criterion is
+          normalised across the asset population (0–1), oriented so higher = better,
+          then multiplied by its weight. The weighted score is the sum; a higher score
+          favours keeping the asset online, while a high <i>shut-in pressure</i>{" "}
+          (driven by avoidable OPEX and water burden) flags candidates to curtail.
+          <br />
+          <br />
+          <b>Column glossary &amp; recommended bounds:</b>
+          <ul style={{ margin: "4px 0 0 18px" }}>
+            <li>
+              <b>Asset</b> — well or pad name. Free text.
+            </li>
+            <li>
+              <b>Monthly margin (USD)</b> — net cash margin per month at current
+              prices. Higher is better. Typical range: roughly{" "}
+              <code>−50,000</code> to <code>+250,000</code>.
+            </li>
+            <li>
+              <b>NPV keep online (USD)</b> — discounted NPV if the asset stays
+              producing through its economic life. Higher is better. No hard
+              cap; bounded by the asset population.
+            </li>
+            <li>
+              <b>Avoidable OPEX</b> — fixed OPEX/mo that disappears when shut in.
+              Higher values <i>raise shut-in pressure</i>. USD/mo, typical range{" "}
+              <code>0</code>–<code>50,000</code>.
+            </li>
+            <li>
+              <b>Restart payback (mo)</b> — months to recover the restart cost.
+              Lower is better. Practical range <code>1</code>–<code>60</code>.
+            </li>
+            <li>
+              <b>Restart risk (0–1)</b> — probability the well does not restart
+              cleanly (paraffin, scale, sand, ESP failure). 0 = safe, 1 = high
+              risk. Lower is better.
+            </li>
+            <li>
+              <b>HBP / lease / midstream risk (0–1)</b> — risk of losing
+              held-by-production status, lease commitments, or pipeline nominations.
+              Lower is better.
+            </li>
+            <li>
+              <b>Water burden (0–1)</b> — relative water-handling/disposal load.
+              Higher values <i>raise shut-in pressure</i>.
+            </li>
+            <li>
+              <b>Strategic value (0–1)</b> — non-economic value (data, partner,
+              regulator visibility, reservoir management). Higher is better.
+            </li>
+          </ul>
+          <br />
+          <b>Bounds to respect:</b> 0–1 fields must stay between{" "}
+          <code>0.0</code> and <code>1.0</code>. Default weights sum to{" "}
+          <code>1.00</code> (20/15/10/10/15/10/10/10) — keep them on a 0–1 scale
+          and summing to ~1 if you customise. Currency fields have no enforced
+          cap; the matrix re-normalises them across the population on every score.
+        </div>
+      </div>
       <div className="muted" style={{ marginBottom: 8 }}>
         Edit per-asset metrics, then score. Higher score = stronger keep-online position; high
         shut-in pressure flags candidates.
