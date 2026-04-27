@@ -639,3 +639,261 @@ code {
 .compare-bar.neg { background: var(--bad); }
 .compare-value { text-align: right; }
 .csv-import-table button { padding: 4px 10px; font-size: 11px; }
+
+/* ----------------------------------------------------------------------- */
+/* InfoTip — hover/focus tooltip for titles and tabs                        */
+/* ----------------------------------------------------------------------- */
+.infotip-wrap {
+  position: relative;
+  display: inline-block;
+}
+.infotip-trigger {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: help;
+}
+.infotip-trigger:hover { background: transparent; color: inherit; }
+.infotip-trigger:focus {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
+.infotip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 999px;
+  margin-left: 2px;
+}
+.panel header h2 .infotip-trigger:hover .infotip-mark,
+.infotip-wrap:hover .infotip-mark {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.infotip-bubble {
+  position: absolute;
+  left: 0;
+  z-index: 30;
+  display: block;
+  width: max-content;
+  max-width: 320px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.infotip-bubble.below { top: calc(100% + 6px); }
+.infotip-bubble.above { bottom: calc(100% + 6px); }
+.infotip-bubble::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+.infotip-bubble.below::before { top: -5px; }
+.infotip-bubble.above::before { bottom: -5px; transform: rotate(225deg); }
+
+/* Panel headers carry an InfoTip — keep the trigger inline with the //
+   prefix so spacing stays tight. */
+.panel header h2 .infotip-trigger { color: inherit; }
+.panel header h2 .infotip-mark {
+  width: 12px; height: 12px; font-size: 8px;
+}
+
+/* Brand block — let the trigger keep its block layout. */
+.brand .infotip-trigger { align-items: center; gap: 8px; }
+.brand .infotip-trigger .brand-block { align-items: flex-start; }
+
+/* ----------------------------------------------------------------------- */
+/* Petroleum Economics flow charts                                          */
+/* ----------------------------------------------------------------------- */
+.pe-root .panel { margin-bottom: 12px; }
+.pe-section { margin-top: 6px; }
+.pe-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.pe-section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pe-flow-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: stretch;
+}
+.pe-flow-step {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pe-arrow {
+  color: var(--accent);
+  font-size: 14px;
+  padding: 0 2px;
+  user-select: none;
+}
+
+.pe-block {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  padding: 8px 10px;
+  width: 170px;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 3px solid var(--accent);
+}
+.pe-block.grid { width: 100%; }
+.pe-block-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  font-weight: 700;
+}
+.pe-block-body {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.pe-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.pe-region-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.pe-region-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-top: 3px solid var(--accent);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pe-region-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pe-region-name {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+.pe-region-regimes {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pe-region-sig {
+  font-size: 11px;
+  color: var(--text);
+  font-style: italic;
+}
+.pe-region-notes {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.pe-check {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* ----------------------------------------------------------------------- */
+/* Case History list                                                        */
+/* ----------------------------------------------------------------------- */
+.case-history .case-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 10px;
+}
+.case-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.case-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.case-title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+.case-id { font-size: 11px; }
+.case-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.case-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.case-desc {
+  font-size: 12px;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+.case-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.case-actions button { font-size: 11px; padding: 4px 8px; }

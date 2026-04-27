@@ -140,18 +140,38 @@ export function ScenarioForm({
               ))}
             </optgroup>
           )}
-          {scenarios.length > 0 && (
-            <optgroup label="Saved scenarios / cases">
-              {scenarios.map((sc) => {
-                const alias = sc.asset_alias ?? sc.inputs.asset_name;
-                return (
-                  <option key={`scenario-${sc.id}`} value={`scenario:${sc.id}`}>
-                    {sc.name} — {alias} [scenario #{sc.id}]
-                  </option>
-                );
-              })}
-            </optgroup>
-          )}
+          {scenarios.length > 0 && (() => {
+            // Show only the 10 most recent saved cases here so the dropdown
+            // stays scannable. The full audit trail lives in the Case History
+            // tab. We rely on created_at if present, otherwise on insertion id
+            // (higher = newer, which is how the API already sorts).
+            const sorted = [...scenarios].sort((a, b) => {
+              const ta = a.created_at ? Date.parse(a.created_at) : 0;
+              const tb = b.created_at ? Date.parse(b.created_at) : 0;
+              if (tb !== ta) return tb - ta;
+              return b.id - a.id;
+            });
+            const recent = sorted.slice(0, 10);
+            const hidden = scenarios.length - recent.length;
+            return (
+              <optgroup
+                label={
+                  hidden > 0
+                    ? `Saved scenarios / cases (last 10 of ${scenarios.length} — see Case History)`
+                    : "Saved scenarios / cases"
+                }
+              >
+                {recent.map((sc) => {
+                  const alias = sc.asset_alias ?? sc.inputs.asset_name;
+                  return (
+                    <option key={`scenario-${sc.id}`} value={`scenario:${sc.id}`}>
+                      {sc.name} — {alias} [scenario #{sc.id}]
+                    </option>
+                  );
+                })}
+              </optgroup>
+            );
+          })()}
         </select>
       </label>
 

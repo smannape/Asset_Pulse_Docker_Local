@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AssetTable } from "./components/AssetTable";
 import { CashFlowChart } from "./components/CashFlowChart";
+import { CaseHistory } from "./components/CaseHistory";
 import { DataExchange } from "./components/DataExchange";
 import { DecisionMatrix } from "./components/DecisionMatrix";
 import { EventPanel } from "./components/EventPanel";
+import { InfoTip } from "./components/InfoTip";
 import { KPIStrip } from "./components/KPIStrip";
 import { Logo } from "./components/Logo";
 import { MonteCarlo } from "./components/MonteCarlo";
 import { Panel } from "./components/Panel";
+import { PetroleumEconomics } from "./components/PetroleumEconomics";
 import { ReportConsole } from "./components/ReportConsole";
 import { ScenarioCompare } from "./components/ScenarioCompare";
 import { ScenarioForm, DEFAULT_INPUTS } from "./components/ScenarioForm";
@@ -28,8 +31,31 @@ type View =
   | "events"
   | "matrix"
   | "assets"
-  | "compare";
+  | "compare"
+  | "history"
+  | "economics";
 type Theme = "light" | "dark";
+
+// Short hover descriptions for top-nav / sidebar tabs. Kept in one place so
+// the topbar and rail stay in sync.
+const VIEW_DESCRIPTIONS: Record<View, string> = {
+  scenario:
+    "Build and run a single asset case — inputs, KPIs, cash flow, CSV import.",
+  sensitivity:
+    "Tornado + Monte Carlo. See which drivers actually move NPV and the P10/P50/P90 spread.",
+  events:
+    "Stack downtime, price drops, OPEX escalation, CAPEX overruns on a base NPV case.",
+  matrix:
+    "Weighted decision matrix — keep online, choke, shut-in, restart recommendations.",
+  assets:
+    "Browse seeded wells, pipelines, gathering systems and facilities.",
+  compare:
+    "Side-by-side compare of saved scenarios with NPV / breakeven bars and PDF report.",
+  history:
+    "Full audit trail of every saved case with one-line result summaries.",
+  economics:
+    "Petroleum-economics primer with flow charts: workflow, CAPEX, OPEX, regional regimes.",
+};
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>("light");
@@ -158,6 +184,8 @@ export default function App() {
     { id: "matrix", label: "Decision Matrix", key: "04" },
     { id: "assets", label: "Assets", key: "05" },
     { id: "compare", label: "Scenario Compare", key: "06" },
+    { id: "history", label: "Case History", key: "07" },
+    { id: "economics", label: "Petroleum Economics", key: "08" },
   ];
 
   return (
@@ -165,10 +193,19 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <Logo height={28} />
-          <span className="brand-block">
-            <span className="brand-name">Asset Pulse</span>
-            <span className="brand-tagline">Forecasting &amp; Decision Intelligence</span>
-          </span>
+          <InfoTip
+            label={
+              <span className="brand-block">
+                <span className="brand-name">Asset Pulse</span>
+                <span className="brand-tagline">
+                  Forecasting &amp; Decision Intelligence
+                </span>
+              </span>
+            }
+            description="Oilfield forecasting and decision-support dashboard — production decline, NPV / PV-10 / payback, fiscal regimes, sensitivity, Monte Carlo, decision matrix."
+            position="below"
+            className="brand-info"
+          />
           <span className="v brand-version">v0.1</span>
         </div>
         <div className="spacer" />
@@ -182,6 +219,7 @@ export default function App() {
                 e.preventDefault();
                 setView(c.id);
               }}
+              title={VIEW_DESCRIPTIONS[c.id]}
             >
               {c.label}
             </a>
@@ -203,6 +241,7 @@ export default function App() {
             key={c.id}
             className={`cmd ${view === c.id ? "active" : ""}`}
             onClick={() => setView(c.id)}
+            title={VIEW_DESCRIPTIONS[c.id]}
           >
             <span>{c.label}</span>
             <span className="key">{c.key}</span>
@@ -240,7 +279,11 @@ export default function App() {
           <>
             <KPIStrip result={result} />
             <div className="two-col">
-              <Panel title="Scenario inputs" meta={<span className="muted">USD · monthly horizon</span>}>
+              <Panel
+                title="Scenario inputs"
+                info="Asset, fluid mix, decline, prices, fiscal regime, CAPEX/OPEX. Pick a base asset or saved case to hydrate, then Run."
+                meta={<span className="muted">USD · monthly horizon</span>}
+              >
                 <ScenarioForm
                   inputs={inputs}
                   onChange={setInputs}
@@ -259,11 +302,15 @@ export default function App() {
               <div>
                 <Panel
                   title="Analysis report"
+                  info="Terminal-style summary of the run: KPIs, fiscal split, cash flow tape and warnings."
                   meta={result ? <span className="accent-text">{result.asset_name}</span> : null}
                 >
                   <ReportConsole result={result} />
                 </Panel>
-                <Panel title="Cash flow projection">
+                <Panel
+                  title="Cash flow projection"
+                  info="Monthly free cash flow over the horizon — bars below zero are CAPEX/loss months."
+                >
                   <CashFlowChart result={result} />
                 </Panel>
               </div>
@@ -271,6 +318,7 @@ export default function App() {
 
             <Panel
               title="Upload data — CSV import & save/run"
+              info="Bulk import scenarios from a CSV. Preview rows, edit, then Save & Run to persist them as cases."
               meta={
                 <span className="muted">
                   Upload → approve rows → Save &amp; Run · saved cases appear in the dropdown above
@@ -313,6 +361,7 @@ export default function App() {
           <>
             <Panel
               title={`Tornado sensitivity — ${inputs.asset_name}`}
+              info="Each driver is varied ±% one at a time and ranked by NPV swing. Longest bar is the dominant value driver."
               meta={
                 <span className="muted">
                   ±% swings on key drivers · ranks by NPV swing
@@ -365,6 +414,7 @@ export default function App() {
             </Panel>
             <Panel
               title={`Monte Carlo uncertainty — ${inputs.asset_name}`}
+              info="Triangular distributions across the same drivers with N iterations. Reports P10 / P50 / P90 NPV and full range."
               meta={<span className="muted">Triangular drivers · P10/P50/P90 NPV</span>}
             >
               <MonteCarlo inputs={inputs} />
@@ -375,6 +425,7 @@ export default function App() {
         {view === "events" && (
           <Panel
             title="Event impact stack"
+            info="Layer ad-hoc events on top of the base case. Each event compounds NPV and monthly cash flow."
             meta={<span className="muted">CAPEX overruns · downtime · price drops · escalation</span>}
           >
             <EventPanel
@@ -387,6 +438,7 @@ export default function App() {
         {view === "matrix" && (
           <Panel
             title="Weighted decision matrix"
+            info="Score each asset across multi-criteria weights to recommend keep-online, choke, shut-in, or restart."
             meta={<span className="muted">Shut-in / restart / keep-online recommender</span>}
           >
             <DecisionMatrix />
@@ -396,6 +448,7 @@ export default function App() {
         {view === "assets" && (
           <Panel
             title="Asset registry"
+            info="All seeded base assets — wells, pipelines, gathering, facilities — plus their cost profiles."
             meta={
               <span className="muted">
                 {assets.length} asset{assets.length === 1 ? "" : "s"} · {scenarios.length} saved
@@ -432,6 +485,7 @@ export default function App() {
         {view === "compare" && (
           <Panel
             title="Scenario compare"
+            info="Saved cases side-by-side — NPV bars, breakeven bars, plus a generated PDF report."
             meta={<span className="muted">Saved runs · NPV · breakeven · payback</span>}
           >
             <ScenarioCompare
@@ -441,6 +495,44 @@ export default function App() {
                 void refreshAssets();
               }}
             />
+          </Panel>
+        )}
+
+        {view === "history" && (
+          <Panel
+            title="Case History"
+            info="Full audit trail of every saved scenario with one-line result descriptions and recommendations."
+            meta={
+              <span className="muted">
+                Every saved case · click load to hydrate the Scenario form
+              </span>
+            }
+          >
+            <CaseHistory
+              refreshKey={refreshKey}
+              onScenarioDeleted={() => {
+                bumpRefreshKey();
+                void refreshAssets();
+              }}
+              onLoadScenario={(sc) => {
+                onLoadSavedScenario(sc);
+                setView("scenario");
+              }}
+            />
+          </Panel>
+        )}
+
+        {view === "economics" && (
+          <Panel
+            title="Petroleum Economics — flow charts"
+            info="Educational primer: scenario workflow, key CAPEX/OPEX inputs, and regional fiscal considerations."
+            meta={
+              <span className="muted">
+                workflow · CAPEX · OPEX · regional considerations
+              </span>
+            }
+          >
+            <PetroleumEconomics />
           </Panel>
         )}
       </main>
