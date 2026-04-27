@@ -132,8 +132,18 @@ def build_scenario_comparison_pdf(scenarios: Iterable[dict]) -> bytes:
     body = ParagraphStyle("body", parent=styles["BodyText"], fontSize=10, leading=13)
     muted = ParagraphStyle("muted", parent=body, textColor=colors.HexColor("#555"))
 
+    accent = ParagraphStyle(
+        "accent", parent=body, textColor=colors.HexColor("#c2530b"),
+        fontSize=10, leading=12, spaceAfter=2,
+    )
+    tagline = ParagraphStyle(
+        "tagline", parent=muted, fontSize=9, leading=11, spaceAfter=6,
+    )
+
     story: list[Any] = []
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    story.append(Paragraph("ASSET PULSE", accent))
+    story.append(Paragraph("Forecasting &amp; Decision Intelligence", tagline))
     story.append(Paragraph("Asset Pulse Scenario Comparison Report", h1))
     story.append(Paragraph(f"Generated: {ts}", muted))
     story.append(Paragraph(f"Scenarios compared: {len(items)}", muted))

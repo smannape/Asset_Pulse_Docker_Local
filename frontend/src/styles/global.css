@@ -136,26 +136,47 @@ hr {
 .brand svg { display: block; }
 .brand .v { color: var(--text-faint); font-weight: 400; letter-spacing: 0; }
 
-/* Brand logo container — the uploaded artwork has a dark background, so we
-   frame it consistently in both themes for legibility. */
-.brand-logo-frame {
+/* Pulse Drop mark — recolors with the theme via currentColor + --accent. */
+.brand-mark {
   display: inline-flex;
   align-items: center;
-  background: #14100b;
-  border: 1px solid var(--border);
-  padding: 3px 8px;
-  border-radius: 2px;
+  justify-content: center;
+  color: var(--text);
   line-height: 0;
 }
-.brand-logo-frame img {
-  display: block;
-  height: 100%;
-  width: auto;
-  max-height: 28px;
+:root[data-theme="dark"] .brand-mark { color: var(--text); }
+
+/* Brand text block: name on top, tagline beneath. Tagline collapses on narrow
+   viewports so the topbar stays compact. */
+.brand-block {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
 }
-:root[data-theme="dark"] .brand-logo-frame {
-  background: var(--bg-alt);
-  border-color: var(--border-soft);
+.brand-name {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.brand-tagline {
+  color: var(--text-faint);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.brand-version {
+  color: var(--text-faint);
+  font-weight: 400;
+  letter-spacing: 0;
+  font-size: 11px;
+  margin-left: 4px;
+}
+@media (max-width: 900px) {
+  .brand-tagline { display: none; }
 }
 
 /* Visually hidden but accessible to screen readers */

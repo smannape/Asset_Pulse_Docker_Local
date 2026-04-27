@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="apTitle apDesc">
+  <title id="apTitle">Asset Pulse — Pulse Drop</title>
+  <desc id="apDesc">Oil droplet outline with a heartbeat pulse line transitioning into an upward forecast trend, ending in a burnt-orange accent.</desc>
+  <defs>
+    <linearGradient id="apShellMetallic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4ead6"/>
+      <stop offset="55%" stop-color="#d9cdb2"/>
+      <stop offset="100%" stop-color="#9f927a"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M32 6 C 22 22, 14 30, 14 40 A 18 18 0 0 0 50 40 C 50 30, 42 22, 32 6 Z"
+          stroke="url(#apShellMetallic)" stroke-width="2.6"/>
+    <path d="M18 41 H24 L26.5 35 L29 47 L31.5 33 L34 43 L37 41 L41 36 L46 30"
+          stroke="#e9dec6" stroke-width="2"/>
+    <circle cx="46" cy="30" r="2.6" fill="#c2530b" stroke="none"/>
+    <path d="M46 30 L50 26" stroke="#c2530b" stroke-width="2"/>
+  </g>
+</svg>
