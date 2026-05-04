@@ -1,11 +1,10 @@
-# Production Docker Compose for Hostinger VPS (or any Linux VPS).
+# Production Docker Compose for Hostinger VPS.
 #
-# Set environment variables in Hostinger's Docker manager UI, or create a
-# .env file on the server before running:
-#   docker compose -f docker-compose.prod.yml up -d --build
-#
-# Caddy handles TLS automatically via Let's Encrypt when DOMAIN is set to a
-# real domain name. Leave DOMAIN blank (or unset) to serve plain HTTP on :80.
+# Hostinger runs Traefik on ports 80/443 as its platform proxy.
+# This compose:
+#   - Exposes frontend on port 8080 (direct access: http://IP:8080)
+#   - Adds Traefik labels so port 80 routes here too (http://IP or http://domain)
+#   - Frontend nginx already proxies /api/* to the backend internally
 
 services:
   db:
@@ -72,35 +71,13 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    expose:
-      - "80"
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    networks:
-      - assetpulse_net
-
-  caddy:
-    build:
-      context: ./caddy
-      dockerfile: Dockerfile
-    container_name: assetpulse_caddy
-    restart: unless-stopped
-    environment:
-      # Set DOMAIN to your real domain for automatic HTTPS (e.g. myapp.com).
-      # Leave as :80 to serve plain HTTP — useful when accessing by IP.
-      DOMAIN: ${DOMAIN:-:80}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-      - backend
+      - "8080:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.assetpulse.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.assetpulse.entrypoints=web"
+      - "traefik.http.services.assetpulse.loadbalancer.server.port=80"
     deploy:
       resources:
         limits:
@@ -111,10 +88,6 @@ services:
 volumes:
   assetpulse_db_data:
     name: assetpulse_db_data
-  caddy_data:
-    name: assetpulse_caddy_data
-  caddy_config:
-    name: assetpulse_caddy_config
 
 networks:
   assetpulse_net:
