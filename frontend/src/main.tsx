@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import App from "./App";
@@ -7,14 +8,14 @@ import { LoginPage } from "./components/LoginPage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./styles/global.css";
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
+function RequireAuth({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <div className="auth-loading">Authenticating…</div>;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
-function RequireAdmin({ children }: { children: React.ReactNode }) {
+function RequireAdmin({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAuth();
   if (isLoading) return <div className="auth-loading">Authenticating…</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -22,7 +23,7 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
+function RedirectIfAuthed({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <div className="auth-loading">Authenticating…</div>;
   if (user) return <Navigate to="/" replace />;

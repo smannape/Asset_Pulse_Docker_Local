@@ -1,8 +1,8 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  AdminUser, ActivityEntry,
+  type AdminUser, type ActivityEntry,
   adminActivityLog, adminCreateUser, adminDeleteUser,
   adminListUsers, adminUpdateUser,
 } from "../lib/api";
