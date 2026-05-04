@@ -1,51 +1,42 @@
-# Asset Pulse — Caddy reverse proxy config.
+# Asset Pulse — Caddy reverse proxy.
 #
-# Replace "yourdomain.com" with your actual domain before deploying.
-# Caddy automatically obtains and renews a Let's Encrypt TLS certificate.
+# DOMAIN env var controls how Caddy listens:
+#   DOMAIN=:80            → plain HTTP, accessible by IP (default)
+#   DOMAIN=yourdomain.com → automatic HTTPS via Let's Encrypt
 #
-# For local testing without a domain, replace the site address with:
-#   :80 { ... }
-# and remove the tls line.
+# Set DOMAIN in docker-compose.prod.yml environment or your .env file.
 
-yourdomain.com {
-    # Proxy /api/* and /docs/* to the FastAPI backend
+{$DOMAIN} {
+    # /api/* and /docs → FastAPI backend
     handle /api/* {
         reverse_proxy assetpulse_backend:8000
     }
 
-    # OpenAPI docs (only accessible if APP_ENV != production)
     handle /docs* {
         reverse_proxy assetpulse_backend:8000
     }
+
     handle /openapi.json {
         reverse_proxy assetpulse_backend:8000
     }
 
-    # Everything else → React SPA served by the frontend Nginx container
+    # Everything else → React SPA (Nginx container)
     handle {
         reverse_proxy assetpulse_frontend:80
     }
 
     # Security headers
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
         -Server
     }
 
-    # Compress responses
     encode gzip
 
-    # Access logs
     log {
-        output file /var/log/caddy/access.log
+        output stdout
         format json
     }
-}
-
-# Redirect www → apex (optional — remove if you don't use www)
-www.yourdomain.com {
-    redir https://yourdomain.com{uri} permanent
 }

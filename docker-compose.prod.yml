@@ -1,11 +1,11 @@
 # Production Docker Compose for Hostinger VPS (or any Linux VPS).
 #
-# Usage:
-#   cp .env.docker.example .env        # fill in real secrets
+# Set environment variables in Hostinger's Docker manager UI, or create a
+# .env file on the server before running:
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
-# Caddy handles TLS automatically via Let's Encrypt.
-# Backend and frontend are NOT exposed on host ports — only Caddy is public.
+# Caddy handles TLS automatically via Let's Encrypt when DOMAIN is set to a
+# real domain name. Leave DOMAIN blank (or unset) to serve plain HTTP on :80.
 
 services:
   db:
@@ -15,7 +15,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-assetpulse}
       POSTGRES_USER: ${POSTGRES_USER:-assetpulse_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_db_password}
     volumes:
       - assetpulse_db_data:/var/lib/postgresql/data
       - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
@@ -40,17 +40,16 @@ services:
     container_name: assetpulse_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-assetpulse}
-      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required (e.g. https://yourdomain.com)}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme_db_password}@db:5432/${POSTGRES_DB:-assetpulse}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key-before-production-use}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@assetpulse.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
-      APP_ENV: production
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-AssetPulse2025!}
+      APP_ENV: ${APP_ENV:-production}
     depends_on:
       db:
         condition: service_healthy
-    # No host port binding — Caddy proxies directly via internal network
     expose:
       - "8000"
     healthcheck:
@@ -75,7 +74,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    # No host port binding — Caddy proxies directly
     expose:
       - "80"
     deploy:
@@ -89,10 +87,14 @@ services:
     image: caddy:2-alpine
     container_name: assetpulse_caddy
     restart: unless-stopped
+    environment:
+      # Set DOMAIN to your real domain for automatic HTTPS (e.g. myapp.com).
+      # Leave as :80 to serve plain HTTP — useful when accessing by IP.
+      DOMAIN: ${DOMAIN:-:80}
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"   # HTTP/3
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
