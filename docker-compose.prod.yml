@@ -22,14 +22,14 @@ services:
       - ./db/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-assetpulse_user} -d ${POSTGRES_DB:-assetpulse}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 30s
     deploy:
       resources:
         limits:
-          memory: 512m
+          memory: 1g
     networks:
       - assetpulse_net
 
@@ -38,7 +38,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: assetpulse_backend
-    restart: unless-stopped
+    restart: on-failure
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme_db_password}@db:5432/${POSTGRES_DB:-assetpulse}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
@@ -48,16 +48,15 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-AssetPulse2025!}
       APP_ENV: ${APP_ENV:-production}
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     expose:
       - "8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -72,8 +71,7 @@ services:
     container_name: assetpulse_frontend
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     expose:
       - "80"
     deploy:
