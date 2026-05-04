@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AssetTable } from "./components/AssetTable";
 import { CashFlowChart } from "./components/CashFlowChart";
 import { CaseHistory } from "./components/CaseHistory";
@@ -15,6 +16,7 @@ import { ReportConsole } from "./components/ReportConsole";
 import { ScenarioCompare } from "./components/ScenarioCompare";
 import { ScenarioForm, DEFAULT_INPUTS } from "./components/ScenarioForm";
 import { Tornado } from "./components/Tornado";
+import { useAuth } from "./contexts/AuthContext";
 import {
   API_BASE,
   apiGet,
@@ -36,8 +38,6 @@ type View =
   | "economics";
 type Theme = "light" | "dark";
 
-// Short hover descriptions for top-nav / sidebar tabs. Kept in one place so
-// the topbar and rail stay in sync.
 const VIEW_DESCRIPTIONS: Record<View, string> = {
   scenario:
     "Build and run a single asset case — inputs, KPIs, cash flow, CSV import.",
@@ -58,12 +58,13 @@ const VIEW_DESCRIPTIONS: Record<View, string> = {
 };
 
 export default function App() {
+  const { user, isAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+
   const [theme, setTheme] = useState<Theme>("light");
   const [view, setView] = useState<View>("scenario");
   const [inputs, setInputs] = useState<ScenarioInputs>(DEFAULT_INPUTS);
   const [result, setResult] = useState<ScenarioResult | null>(null);
-  // Tracks which saved scenario the form is currently bound to, so a Run
-  // updates that DB row in-place rather than creating a new sibling.
   const [loadedScenarioId, setLoadedScenarioId] = useState<number | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
@@ -73,7 +74,6 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [assetsLoading, setAssetsLoading] = useState(false);
 
-  // Push theme to <html data-theme="...">
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
@@ -94,7 +94,6 @@ export default function App() {
     }
   }, []);
 
-  // Load assets + health on mount
   useEffect(() => {
     void refreshAssets();
     apiGet<{ status: string; database: string }>("/api/health")
@@ -112,12 +111,9 @@ export default function App() {
         scenarioId: loadedScenarioId,
       });
       setResult(r);
-      // Stay bound to whichever scenario row the backend persisted to, so a
-      // follow-up Run keeps updating in place rather than spawning siblings.
       if (typeof r.scenario_id === "number") {
         setLoadedScenarioId(r.scenario_id);
       }
-      // Persist + sibling tabs need to see the updated row.
       bumpRefreshKey();
       void refreshAssets();
     } catch (e: unknown) {
@@ -127,10 +123,6 @@ export default function App() {
     }
   }, [inputs, loadedScenarioId, bumpRefreshKey, refreshAssets]);
 
-  // When user picks an asset profile, hydrate inputs from cost profile.
-  // Use functional setInputs so the callback identity doesn't change with every
-  // input edit — otherwise the ScenarioForm's load-asset effect would re-fire
-  // and silently overwrite changes (including a Reset).
   const onLoadAsset = useCallback(
     (id: number | null) => {
       if (id === null) return;
@@ -138,7 +130,6 @@ export default function App() {
       if (!a) return;
       const cp = a.cost_profile;
       if (!cp) return;
-      // Picking a base asset detaches the form from any saved scenario row.
       setLoadedScenarioId(null);
       setInputs((prev) => {
         const next: ScenarioInputs = {
@@ -164,13 +155,12 @@ export default function App() {
   const onLoadSavedScenario = useCallback((sc: SavedScenario) => {
     setInputs({ ...DEFAULT_INPUTS, ...sc.inputs });
     setResult(null);
-    // Bind the form to this saved scenario so Run updates it in place.
     setLoadedScenarioId(sc.id);
   }, []);
 
   const baseMonthlyCf = useMemo(() => {
     if (!result) return null;
-    const fcf = result.monthly.free_cash_flow.slice(1); // exclude t=0 capex
+    const fcf = result.monthly.free_cash_flow.slice(1);
     if (fcf.length === 0) return 0;
     const positive = fcf.filter((v) => v > 0);
     if (positive.length === 0) return fcf.reduce((a, b) => a + b, 0) / fcf.length;
@@ -187,6 +177,11 @@ export default function App() {
     { id: "history", label: "Case History", key: "07" },
     { id: "economics", label: "Petroleum Economics", key: "08" },
   ];
+
+  async function handleLogout() {
+    await logout();
+    navigate("/login", { replace: true });
+  }
 
   return (
     <div className="app">
@@ -206,7 +201,7 @@ export default function App() {
             position="below"
             className="brand-info"
           />
-          <span className="v brand-version">v0.1</span>
+          <span className="v brand-version">v1.0</span>
         </div>
         <div className="spacer" />
         <nav className="nav">
@@ -215,22 +210,33 @@ export default function App() {
               key={c.id}
               href="#"
               className={view === c.id ? "active" : ""}
-              onClick={(e) => {
-                e.preventDefault();
-                setView(c.id);
-              }}
+              onClick={(e) => { e.preventDefault(); setView(c.id); }}
               title={VIEW_DESCRIPTIONS[c.id]}
             >
               {c.label}
             </a>
           ))}
+          {isAdmin && (
+            <a
+              href="/admin"
+              onClick={(e) => { e.preventDefault(); navigate("/admin"); }}
+              title="Admin dashboard — manage users and view activity"
+              style={{ color: "var(--accent)" }}
+            >
+              Admin
+            </a>
+          )}
         </nav>
+        <span className="muted" style={{ fontSize: 11, marginRight: 6 }}>{user?.email}</span>
         <button
           className="ghost"
           onClick={() => setTheme(theme === "light" ? "dark" : "light")}
           title="Toggle theme"
         >
           {theme === "light" ? "[ DARK ]" : "[ LIGHT ]"}
+        </button>
+        <button className="ghost" onClick={handleLogout} title="Sign out" style={{ marginLeft: 4 }}>
+          [ OUT ]
         </button>
       </header>
 
@@ -263,15 +269,15 @@ export default function App() {
           <br />
           assets: <span className="accent-text">{assets.length}</span> · scenarios:{" "}
           <span className="accent-text">{scenarios.length}</span>
+          <br />
+          user: <span className="accent-text">{user?.role}</span>
         </div>
       </aside>
 
       <main className="main">
         {err && (
           <div className="panel" style={{ borderColor: "var(--bad)" }}>
-            <div className="body" style={{ color: "var(--bad)" }}>
-              ! {err}
-            </div>
+            <div className="body" style={{ color: "var(--bad)" }}>! {err}</div>
           </div>
         )}
 
@@ -293,10 +299,7 @@ export default function App() {
                   scenarios={scenarios}
                   onLoadAsset={onLoadAsset}
                   onLoadScenario={onLoadSavedScenario}
-                  onReset={() => {
-                    setLoadedScenarioId(null);
-                    setResult(null);
-                  }}
+                  onReset={() => { setLoadedScenarioId(null); setResult(null); }}
                 />
               </Panel>
               <div>
@@ -315,40 +318,20 @@ export default function App() {
                 </Panel>
               </div>
             </div>
-
             <Panel
               title="Upload data — CSV import & save/run"
               info="Bulk import scenarios from a CSV. Preview rows, edit, then Save & Run to persist them as cases."
-              meta={
-                <span className="muted">
-                  Upload → approve rows → Save &amp; Run · saved cases appear in the dropdown above
-                </span>
-              }
+              meta={<span className="muted">Upload → approve rows → Save &amp; Run</span>}
             >
               <DataExchange
                 inputs={inputs}
-                onImportInputs={(next) => {
-                  setInputs(next);
-                  setLoadedScenarioId(null);
-                }}
-                onLoadScenario={(next) => {
-                  setInputs(next);
-                  setResult(null);
-                  setLoadedScenarioId(null);
-                }}
-                onScenariosSaved={() => {
-                  bumpRefreshKey();
-                  void refreshAssets();
-                }}
+                onImportInputs={(next) => { setInputs(next); setLoadedScenarioId(null); }}
+                onLoadScenario={(next) => { setInputs(next); setResult(null); setLoadedScenarioId(null); }}
+                onScenariosSaved={() => { bumpRefreshKey(); void refreshAssets(); }}
                 onResultReady={(r, nextInputs) => {
-                  // CSV Save & Run finished — push the freshly-computed result
-                  // into the visible Scenario panel and bind the form to that
-                  // saved row so a follow-up Run updates it in place.
                   setInputs(nextInputs);
                   setResult(r);
-                  if (typeof r.scenario_id === "number") {
-                    setLoadedScenarioId(r.scenario_id);
-                  }
+                  if (typeof r.scenario_id === "number") setLoadedScenarioId(r.scenario_id);
                 }}
                 result={result}
                 assets={assets}
@@ -361,60 +344,14 @@ export default function App() {
           <>
             <Panel
               title={`Tornado sensitivity — ${inputs.asset_name}`}
-              info="Each driver is varied ±% one at a time and ranked by NPV swing. Longest bar is the dominant value driver."
-              meta={
-                <span className="muted">
-                  ±% swings on key drivers · ranks by NPV swing
-                </span>
-              }
+              info="Each driver is varied ±% one at a time and ranked by NPV swing."
+              meta={<span className="muted">±% swings on key drivers · ranks by NPV swing</span>}
             >
-              <div
-                className="ln"
-                style={{
-                  marginBottom: 8,
-                  fontSize: 12,
-                  color: "var(--accent)",
-                  fontWeight: 600,
-                }}
-              >
-                Tornado sensitivity for: {inputs.asset_name}
-                {result?.scenario_id ? ` · scenario #${result.scenario_id}` : ""}
-              </div>
               <Tornado inputs={inputs} />
-            </Panel>
-            <Panel title="Why run a tornado sensitivity?">
-              <div className="muted" style={{ fontSize: 12, lineHeight: 1.65 }}>
-                A tornado sensitivity varies <b>one assumption at a time</b> by a
-                fixed ±% (oil price, decline, CAPEX, OPEX, water cut, discount
-                rate, etc.) while holding everything else constant, and ranks
-                each input by the resulting <b>NPV swing</b>. The bar shown for
-                each variable is its delta vs the base NPV; the longest bar is
-                the dominant value driver.
-                <br />
-                <br />
-                <b>What it achieves:</b>
-                <ul style={{ margin: "6px 0 0 18px" }}>
-                  <li>
-                    Identifies the <b>key economic levers</b> for the selected
-                    asset/scenario so capital and OPEX attention go to inputs
-                    that actually move NPV.
-                  </li>
-                  <li>
-                    Surfaces <b>risk controls</b> — variables with large
-                    downside swings are candidates for hedging, contracting, or
-                    tighter operational monitoring.
-                  </li>
-                  <li>
-                    Provides a quick <b>sanity check</b> before committing to
-                    Monte Carlo: if a driver doesn't move NPV here, modeling its
-                    distribution is rarely worth the effort.
-                  </li>
-                </ul>
-              </div>
             </Panel>
             <Panel
               title={`Monte Carlo uncertainty — ${inputs.asset_name}`}
-              info="Triangular distributions across the same drivers with N iterations. Reports P10 / P50 / P90 NPV and full range."
+              info="Triangular distributions across the same drivers with N iterations. Reports P10 / P50 / P90 NPV."
               meta={<span className="muted">Triangular drivers · P10/P50/P90 NPV</span>}
             >
               <MonteCarlo inputs={inputs} />
@@ -428,10 +365,7 @@ export default function App() {
             info="Layer ad-hoc events on top of the base case. Each event compounds NPV and monthly cash flow."
             meta={<span className="muted">CAPEX overruns · downtime · price drops · escalation</span>}
           >
-            <EventPanel
-              baseNpv={result?.kpis.npv ?? null}
-              baseMonthlyCf={baseMonthlyCf}
-            />
+            <EventPanel baseNpv={result?.kpis.npv ?? null} baseMonthlyCf={baseMonthlyCf} />
           </Panel>
         )}
 
@@ -452,32 +386,21 @@ export default function App() {
             meta={
               <span className="muted">
                 {assets.length} asset{assets.length === 1 ? "" : "s"} · {scenarios.length} saved
-                scenario{scenarios.length === 1 ? "" : "s"}
               </span>
             }
           >
-            <div
-              className="row"
-              style={{ marginBottom: 10, gap: 10, flexWrap: "wrap" }}
-            >
+            <div className="row" style={{ marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
               <button
                 className="primary"
                 onClick={() => void refreshAssets()}
                 disabled={assetsLoading}
-                title="Reload assets and any new scenario-derived cases"
               >
-                {assetsLoading ? "Refreshing..." : "Refresh assets & cases"}
+                {assetsLoading ? "Refreshing…" : "Refresh assets & cases"}
               </button>
-              <span className="muted" style={{ fontSize: 11 }}>
-                Cases also refresh automatically after a scenario run or CSV save.
-              </span>
             </div>
             <AssetTable
               assets={assets}
-              onSelect={(a) => {
-                onLoadAsset(a.id);
-                setView("scenario");
-              }}
+              onSelect={(a) => { onLoadAsset(a.id); setView("scenario"); }}
             />
           </Panel>
         )}
@@ -490,10 +413,7 @@ export default function App() {
           >
             <ScenarioCompare
               refreshKey={refreshKey}
-              onScenarioDeleted={() => {
-                bumpRefreshKey();
-                void refreshAssets();
-              }}
+              onScenarioDeleted={() => { bumpRefreshKey(); void refreshAssets(); }}
             />
           </Panel>
         )}
@@ -501,23 +421,13 @@ export default function App() {
         {view === "history" && (
           <Panel
             title="Case History"
-            info="Full audit trail of every saved scenario with one-line result descriptions and recommendations."
-            meta={
-              <span className="muted">
-                Every saved case · click load to hydrate the Scenario form
-              </span>
-            }
+            info="Full audit trail of every saved scenario with one-line result descriptions."
+            meta={<span className="muted">Every saved case · click load to hydrate the Scenario form</span>}
           >
             <CaseHistory
               refreshKey={refreshKey}
-              onScenarioDeleted={() => {
-                bumpRefreshKey();
-                void refreshAssets();
-              }}
-              onLoadScenario={(sc) => {
-                onLoadSavedScenario(sc);
-                setView("scenario");
-              }}
+              onScenarioDeleted={() => { bumpRefreshKey(); void refreshAssets(); }}
+              onLoadScenario={(sc) => { onLoadSavedScenario(sc); setView("scenario"); }}
             />
           </Panel>
         )}
@@ -526,11 +436,7 @@ export default function App() {
           <Panel
             title="Petroleum Economics — flow charts"
             info="Educational primer: scenario workflow, key CAPEX/OPEX inputs, and regional fiscal considerations."
-            meta={
-              <span className="muted">
-                workflow · CAPEX · OPEX · regional considerations
-              </span>
-            }
+            meta={<span className="muted">workflow · CAPEX · OPEX · regional considerations</span>}
           >
             <PetroleumEconomics />
           </Panel>
@@ -544,9 +450,9 @@ export default function App() {
         </span>
         <span className="muted">db: {health?.database ?? "—"}</span>
         <span className="muted">theme: {theme}</span>
-        <span className="muted">view: {view}</span>
+        <span className="muted">user: {user?.email}</span>
         <span className="muted" style={{ marginLeft: "auto" }}>
-          Asset Pulse // formulas in python · storage on neon · ui on netlify
+          Asset Pulse // v1.0 — {isAdmin ? "admin" : "user"}
         </span>
       </footer>
     </div>

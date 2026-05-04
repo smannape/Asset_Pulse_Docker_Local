@@ -1,0 +1,121 @@
+# Production Docker Compose for Hostinger VPS (or any Linux VPS).
+#
+# Usage:
+#   cp .env.docker.example .env        # fill in real secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Caddy handles TLS automatically via Let's Encrypt.
+# Backend and frontend are NOT exposed on host ports — only Caddy is public.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: assetpulse_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-assetpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-assetpulse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - assetpulse_db_data:/var/lib/postgresql/data
+      - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./db/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-assetpulse_user} -d ${POSTGRES_DB:-assetpulse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    networks:
+      - assetpulse_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: assetpulse_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-assetpulse}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required (e.g. https://yourdomain.com)}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@assetpulse.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      APP_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    # No host port binding — Caddy proxies directly via internal network
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    networks:
+      - assetpulse_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: assetpulse_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # No host port binding — Caddy proxies directly
+    expose:
+      - "80"
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    networks:
+      - assetpulse_net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: assetpulse_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    networks:
+      - assetpulse_net
+
+volumes:
+  assetpulse_db_data:
+    name: assetpulse_db_data
+  caddy_data:
+    name: assetpulse_caddy_data
+  caddy_config:
+    name: assetpulse_caddy_config
+
+networks:
+  assetpulse_net:
+    name: assetpulse_net
+    driver: bridge

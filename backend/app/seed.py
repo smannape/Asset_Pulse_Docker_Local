@@ -1,12 +1,19 @@
-"""Seed sample wells, pipelines, gathering centers and facilities."""
+"""Seed sample data and bootstrap first admin user."""
 
 from __future__ import annotations
 
-from .database import (
-    Asset, CostProfile, PriceDeck, Scenario, init_db, get_session, engine,
-)
+import os
+
 from sqlalchemy import select
 
+from .database import (
+    Asset, CostProfile, PriceDeck, Scenario, User,
+    init_db, get_session,
+)
+
+# ---------------------------------------------------------------------------
+# Sample data (unchanged from original)
+# ---------------------------------------------------------------------------
 
 SAMPLE_PRICE_DECK = {
     "name": "Base 2025",
@@ -15,7 +22,6 @@ SAMPLE_PRICE_DECK = {
     "ngl_price": 24.0,
     "differentials": {"oil_diff": -3.0, "gas_diff": -0.40},
 }
-
 
 SAMPLE_ASSETS = [
     {
@@ -92,10 +98,7 @@ SAMPLE_ASSETS = [
             "compressor_hp": 0, "metering_scada": 350_000, "tie_in_costs": 220_000,
             "contingency_pct": 0.10,
         },
-        "opex_inputs": {
-            "fixed_opex_per_month": 65_000,
-            "oil_var_per_bbl": 0.35,
-        },
+        "opex_inputs": {"fixed_opex_per_month": 65_000, "oil_var_per_bbl": 0.35},
         "decline_inputs": {},
     },
     {
@@ -104,20 +107,16 @@ SAMPLE_ASSETS = [
         "region": "TX-Eagle Ford",
         "metadata_json": {"throughput_mmcfd": 30, "oil_bopd": 8000, "water_bwpd": 25000},
         "capex_inputs": {
-            "processing_capacity_mmcfd": 30,
-            "oil_handling_capacity_bopd": 8000,
-            "water_handling_capacity_bwpd": 25000,
-            "compression_hp": 4500, "storage_capacity_bbl": 12000,
-            "power_or_grid": 1_200_000, "controls_scada": 480_000,
-            "install_commission": 950_000, "contingency_pct": 0.12,
+            "processing_capacity_mmcfd": 30, "oil_handling_capacity_bopd": 8000,
+            "water_handling_capacity_bwpd": 25000, "compression_hp": 4500,
+            "storage_capacity_bbl": 12000, "power_or_grid": 1_200_000,
+            "controls_scada": 480_000, "install_commission": 950_000,
+            "contingency_pct": 0.12,
         },
-        "opex_inputs": {
-            "fixed_opex_per_month": 220_000,
-        },
+        "opex_inputs": {"fixed_opex_per_month": 220_000},
         "decline_inputs": {},
     },
 ]
-
 
 SAMPLE_SCENARIOS = [
     {
@@ -144,17 +143,44 @@ SAMPLE_SCENARIOS = [
 ]
 
 
+def _create_default_admin() -> bool:
+    """Create the first admin user from env vars if no users exist. Returns True if created."""
+    from .modules.auth import hash_password
+    email = os.environ.get("ADMIN_EMAIL", "admin@assetpulse.local")
+    password = os.environ.get("ADMIN_PASSWORD", "AssetPulse2025!")
+    with get_session() as s:
+        existing = s.execute(select(User)).first()
+        if existing:
+            return False
+        admin = User(
+            email=email,
+            full_name="System Admin",
+            password_hash=hash_password(password),
+            role="admin",
+            is_active=True,
+        )
+        s.add(admin)
+    return True
+
+
 def seed() -> dict:
     init_db()
+
+    # Bootstrap admin user (runs before asset seed so a user always exists)
+    admin_created = False
+    try:
+        admin_created = _create_default_admin()
+    except Exception:
+        pass
+
     inserted_assets = 0
     inserted_scenarios = 0
+
     with get_session() as s:
-        # Idempotent: skip seeding if any assets exist
         existing = s.execute(select(Asset)).first()
         if existing:
-            return {"status": "already_seeded"}
+            return {"status": "already_seeded", "admin_created": admin_created}
 
-        # Price deck
         s.add(PriceDeck(**SAMPLE_PRICE_DECK))
 
         for a in SAMPLE_ASSETS:
@@ -164,20 +190,24 @@ def seed() -> dict:
             )
             s.add(asset)
             s.flush()
-            cp = CostProfile(
+            s.add(CostProfile(
                 asset_id=asset.id,
                 capex_inputs=a["capex_inputs"],
                 opex_inputs=a["opex_inputs"],
                 decline_inputs=a["decline_inputs"],
-            )
-            s.add(cp)
+            ))
             inserted_assets += 1
 
         for sc in SAMPLE_SCENARIOS:
             s.add(Scenario(name=sc["name"], inputs=sc["inputs"]))
             inserted_scenarios += 1
 
-    return {"status": "seeded", "assets": inserted_assets, "scenarios": inserted_scenarios}
+    return {
+        "status": "seeded",
+        "assets": inserted_assets,
+        "scenarios": inserted_scenarios,
+        "admin_created": admin_created,
+    }
 
 
 if __name__ == "__main__":

@@ -1,0 +1,51 @@
+# Asset Pulse — Caddy reverse proxy config.
+#
+# Replace "yourdomain.com" with your actual domain before deploying.
+# Caddy automatically obtains and renews a Let's Encrypt TLS certificate.
+#
+# For local testing without a domain, replace the site address with:
+#   :80 { ... }
+# and remove the tls line.
+
+yourdomain.com {
+    # Proxy /api/* and /docs/* to the FastAPI backend
+    handle /api/* {
+        reverse_proxy assetpulse_backend:8000
+    }
+
+    # OpenAPI docs (only accessible if APP_ENV != production)
+    handle /docs* {
+        reverse_proxy assetpulse_backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy assetpulse_backend:8000
+    }
+
+    # Everything else → React SPA served by the frontend Nginx container
+    handle {
+        reverse_proxy assetpulse_frontend:80
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Compress responses
+    encode gzip
+
+    # Access logs
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
+
+# Redirect www → apex (optional — remove if you don't use www)
+www.yourdomain.com {
+    redir https://yourdomain.com{uri} permanent
+}

@@ -1,11 +1,15 @@
-"""Pydantic request/response schemas."""
+"""Pydantic request/response schemas — domain + auth."""
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
+
+# =============================================================================
+# Existing domain schemas (unchanged)
+# =============================================================================
 
 class ScenarioInputs(BaseModel):
     asset_name: str = "asset"
@@ -37,27 +41,20 @@ class ScenarioInputs(BaseModel):
     opex_multiplier: float = 1.0
     apply_economic_limit: bool = True
 
-    # ------------------------------------------------------------------
-    # Fiscal / Cost Regime (default = us_royalty_tax for backward compat)
-    # ------------------------------------------------------------------
     fiscal_regime: str = Field(
         default="us_royalty_tax",
         pattern="^(us_royalty_tax|noc_internal|psc_cost_recovery|technical_service_contract|concession_tax_royalty)$",
     )
-    # NOC internal
     noc_government_share_pct: float = 0.0
     noc_corp_tax_pct: float = 0.0
-    # PSC / EPSA cost recovery
     psc_royalty_pct: float = 0.10
     psc_cost_oil_limit_pct: float = 0.60
     psc_contractor_profit_share_pct: float = 0.40
     psc_contractor_tax_pct: float = 0.30
     psc_capex_uplift_pct: float = 0.0
-    # Technical Service Contract / RSC
     tsc_payment_cap_pct: float = 0.50
     tsc_remuneration_per_boe: float = 1.50
     tsc_contractor_tax_pct: float = 0.35
-    # Concession tax/royalty
     concession_royalty_pct: float = 0.20
     concession_income_tax_pct: float = 0.50
     concession_royalty_progressive: bool = False
@@ -122,11 +119,10 @@ class DecisionMatrixAsset(BaseModel):
 
 class DecisionMatrixRequest(BaseModel):
     assets: list[DecisionMatrixAsset]
-    criteria: Optional[list[dict]] = None  # override default weights
+    criteria: Optional[list[dict]] = None
 
 
 class ScenarioImportRow(BaseModel):
-    """One CSV row staged for save. asset_id_or_name is optional metadata."""
     scenario_name: Optional[str] = None
     asset_id_or_name: Optional[str] = None
     notes: Optional[str] = None
@@ -135,5 +131,88 @@ class ScenarioImportRow(BaseModel):
 
 class ScenarioImportRequest(BaseModel):
     rows: list[ScenarioImportRow]
-    run: bool = True  # if True, also run economics and persist results
+    run: bool = True
     source: str = "csv_import"
+
+
+# =============================================================================
+# Auth schemas (Task 1)
+# =============================================================================
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthUserOut(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str]
+    role: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: AuthUserOut
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def strong_enough(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class UserCreate(BaseModel):
+    email: str
+    full_name: Optional[str] = None
+    password: str
+    role: str = Field(default="user", pattern="^(admin|user)$")
+
+    @field_validator("password")
+    @classmethod
+    def strong_enough(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = Field(default=None, pattern="^(admin|user)$")
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def strong_enough(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str]
+    role: str
+    is_active: bool
+    created_at: Optional[str]
+    last_login: Optional[str]
+
+
+class ActivityLogOut(BaseModel):
+    id: int
+    user_email: Optional[str]
+    action: str
+    resource_type: Optional[str]
+    resource_id: Optional[int]
+    details: Optional[dict]
+    ip_address: Optional[str]
+    created_at: Optional[str]

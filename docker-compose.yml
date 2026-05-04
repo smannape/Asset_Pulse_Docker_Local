@@ -1,7 +1,3 @@
-# Asset Pulse — Docker Desktop deployment.
-# Brings up PostgreSQL 17, the FastAPI backend, and the Nginx-served React frontend.
-# See docs/docker-desktop-deployment.pplx.md for a step-by-step beginner guide.
-
 services:
   db:
     image: postgres:17-alpine
@@ -13,14 +9,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - assetpulse_db_data:/var/lib/postgresql/data
-      # First-boot bootstrap: schema + seed data. Re-run only on a fresh volume.
       - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
-    # The DB is reachable on the internal Docker network as `db:5432`.
-    # Uncomment the ports block below if you want to connect from your host
-    # (psql, DBeaver, etc.). 5433 is used to avoid clashing with a local
-    # PostgreSQL install on the default 5432.
-    # ports:
-    #   - "5433:5432"
+      - ./db/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-assetpulse_user} -d ${POSTGRES_DB:-assetpulse}"]
       interval: 10s
@@ -39,11 +29,14 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-assetpulse}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-to-a-random-64-char-secret-before-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@assetpulse.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-AssetPulse2025!}
+      APP_ENV: ${APP_ENV:-development}
     depends_on:
       db:
         condition: service_healthy
-    # Optional host port for direct backend debugging. Frontend talks to the
-    # backend via the internal `backend` hostname, so this is not required.
     ports:
       - "8000:8000"
     healthcheck:
