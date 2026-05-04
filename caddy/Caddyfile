@@ -1,0 +1,42 @@
+# Asset Pulse — Caddy reverse proxy.
+#
+# DOMAIN env var controls how Caddy listens:
+#   DOMAIN=:80            → plain HTTP, accessible by IP (default)
+#   DOMAIN=yourdomain.com → automatic HTTPS via Let's Encrypt
+#
+# Set DOMAIN in docker-compose.prod.yml environment or your .env file.
+
+{$DOMAIN} {
+    # /api/* and /docs → FastAPI backend
+    handle /api/* {
+        reverse_proxy assetpulse_backend:8000
+    }
+
+    handle /docs* {
+        reverse_proxy assetpulse_backend:8000
+    }
+
+    handle /openapi.json {
+        reverse_proxy assetpulse_backend:8000
+    }
+
+    # Everything else → React SPA (Nginx container)
+    handle {
+        reverse_proxy assetpulse_frontend:80
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    encode gzip
+
+    log {
+        output stdout
+        format json
+    }
+}

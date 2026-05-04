@@ -82,7 +82,9 @@ services:
       - assetpulse_net
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
     container_name: assetpulse_caddy
     restart: unless-stopped
     environment:
@@ -94,7 +96,6 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
