@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-assetpulse}
       POSTGRES_USER: ${POSTGRES_USER:-assetpulse_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_db_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - assetpulse_db_data:/var/lib/postgresql/data
       - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
@@ -39,7 +39,7 @@ services:
     container_name: assetpulse_backend
     restart: on-failure
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme_db_password}@db:5432/${POSTGRES_DB:-assetpulse}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-assetpulse_user}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-assetpulse}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key-before-production-use}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
