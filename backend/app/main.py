@@ -568,6 +568,8 @@ def _persist_scenario_result(
         "free_cash_flow": result["monthly"]["free_cash_flow"],
         "net_revenue": result["monthly"]["net_revenue"],
         "opex": result["monthly"]["opex"],
+        "oil_bbl": result["monthly"].get("oil_bbl", []),
+        "water_bbl": result["monthly"].get("water_bbl", []),
     })
     s.add(ScenarioResult(
         scenario_id=sc.id,
@@ -827,6 +829,7 @@ def list_scenarios(limit: int = 100) -> list[dict]:
                     "breakeven_oil_price": res.breakeven_oil_price,
                     "total_boe": res.total_boe,
                     "fiscal_regime": res.fiscal_regime,
+                    "monthly_summary": res.monthly_summary,
                 } if res else None,
             })
     return out

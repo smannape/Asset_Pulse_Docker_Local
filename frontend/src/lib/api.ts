@@ -396,6 +396,15 @@ export type EventInput = {
   notes?: string;
 };
 
+export type MonthlySummary = {
+  months: number[];
+  free_cash_flow: number[];
+  net_revenue: number[];
+  opex: number[];
+  oil_bbl: number[];
+  water_bbl: number[];
+};
+
 export type SavedScenarioResult = {
   npv: number | null;
   pv10: number | null;
@@ -405,6 +414,7 @@ export type SavedScenarioResult = {
   breakeven_oil_price: number | null;
   total_boe: number | null;
   fiscal_regime: string | null;
+  monthly_summary: MonthlySummary | null;
 };
 
 export type SavedScenario = {
@@ -417,6 +427,48 @@ export type SavedScenario = {
   inputs: ScenarioInputs;
   result: SavedScenarioResult | null;
 };
+
+/** Reconstruct a ScenarioResult from stored summary data so history items
+ *  can populate all charts without an extra API round-trip. */
+export function reconstructResult(sc: SavedScenario): ScenarioResult | null {
+  const r = sc.result;
+  if (!r) return null;
+  const ms = r.monthly_summary;
+  return {
+    asset_name: sc.asset_alias ?? sc.inputs.asset_name,
+    scenario_id: sc.id,
+    breakeven_oil_price: r.breakeven_oil_price,
+    kpis: {
+      npv: r.npv ?? 0,
+      pv10: r.pv10 ?? 0,
+      payback_months: r.payback_months,
+      total_boe: r.total_boe ?? 0,
+      netback_per_boe: r.netback_per_boe ?? 0,
+      economic_limit: {
+        net_price_per_boe: 0,
+        economic_limit_boe_per_month: r.economic_limit_boe_per_month,
+        note: "",
+      },
+      truncated_at_month: null,
+      discount_rate_annual: sc.inputs.discount_rate_annual,
+      decline_model: sc.inputs.decline_model ?? "exponential",
+      b_factor: sc.inputs.b_factor ?? 0.7,
+      fiscal_regime: r.fiscal_regime as FiscalRegime | undefined,
+    },
+    monthly: {
+      months: ms?.months ?? [],
+      free_cash_flow: ms?.free_cash_flow ?? [],
+      net_revenue: ms?.net_revenue ?? [],
+      opex: ms?.opex ?? [],
+      oil_bbl: ms?.oil_bbl ?? [],
+      water_bbl: ms?.water_bbl ?? [],
+      gas_mcf: [],
+      sustaining_capex: [],
+      dev_capex: [],
+      abandonment: [],
+    },
+  };
+}
 
 export type ScenarioImportRow = {
   scenario_name?: string;

@@ -5,6 +5,7 @@ import { CashFlowChart } from "./components/CashFlowChart";
 import { CaseHistory } from "./components/CaseHistory";
 import { DataExchange } from "./components/DataExchange";
 import { DecisionMatrix } from "./components/DecisionMatrix";
+import { DeclineCurveChart } from "./components/DeclineCurveChart";
 import { EventPanel } from "./components/EventPanel";
 import { InfoTip } from "./components/InfoTip";
 import { KPIStrip } from "./components/KPIStrip";
@@ -15,11 +16,13 @@ import { PetroleumEconomics } from "./components/PetroleumEconomics";
 import { ReportConsole } from "./components/ReportConsole";
 import { ScenarioCompare } from "./components/ScenarioCompare";
 import { ScenarioForm, DEFAULT_INPUTS } from "./components/ScenarioForm";
+import { ScenarioHistoryPanel } from "./components/ScenarioHistoryPanel";
 import { Tornado } from "./components/Tornado";
 import { useAuth } from "./contexts/AuthContext";
 import {
   API_BASE,
   apiGet,
+  reconstructResult,
   runScenarioApi,
   type Asset,
   type SavedScenario,
@@ -158,6 +161,14 @@ export default function App() {
     setLoadedScenarioId(sc.id);
   }, []);
 
+  // History panel click: load inputs + immediately restore charts from stored data.
+  const handleSelectHistory = useCallback((sc: SavedScenario) => {
+    setInputs({ ...DEFAULT_INPUTS, ...sc.inputs });
+    setLoadedScenarioId(sc.id);
+    setResult(reconstructResult(sc));
+    setErr(null);
+  }, []);
+
   const baseMonthlyCf = useMemo(() => {
     if (!result) return null;
     const fcf = result.monthly.free_cash_flow.slice(1);
@@ -284,25 +295,41 @@ export default function App() {
         {view === "scenario" && (
           <>
             <KPIStrip result={result} />
-            <div className="two-col">
-              <Panel
-                title="Scenario inputs"
-                info="Asset, fluid mix, decline, prices, fiscal regime, CAPEX/OPEX. Pick a base asset or saved case to hydrate, then Run."
-                meta={<span className="muted">USD · monthly horizon</span>}
-              >
-                <ScenarioForm
-                  inputs={inputs}
-                  onChange={setInputs}
-                  onSubmit={runScenario}
-                  loading={running}
-                  assets={assets}
-                  scenarios={scenarios}
-                  onLoadAsset={onLoadAsset}
-                  onLoadScenario={onLoadSavedScenario}
-                  onReset={() => { setLoadedScenarioId(null); setResult(null); }}
-                />
-              </Panel>
-              <div>
+            <div className="scenario-layout">
+              {/* ── Left column: recent runs + inputs form ── */}
+              <div className="scenario-left">
+                <Panel
+                  title="Recent runs"
+                  info="Last 5 saved scenarios. Click any row to load its inputs and results instantly."
+                  meta={<span className="muted">{scenarios.length} total saved</span>}
+                >
+                  <ScenarioHistoryPanel
+                    scenarios={scenarios.slice(0, 5)}
+                    activeId={loadedScenarioId}
+                    onSelect={handleSelectHistory}
+                  />
+                </Panel>
+                <Panel
+                  title="Scenario inputs"
+                  info="Asset, fluid mix, decline, prices, fiscal regime, CAPEX/OPEX. Pick a base asset or saved case to hydrate, then Run."
+                  meta={<span className="muted">USD · monthly horizon</span>}
+                >
+                  <ScenarioForm
+                    inputs={inputs}
+                    onChange={setInputs}
+                    onSubmit={runScenario}
+                    loading={running}
+                    assets={assets}
+                    scenarios={scenarios}
+                    onLoadAsset={onLoadAsset}
+                    onLoadScenario={onLoadSavedScenario}
+                    onReset={() => { setLoadedScenarioId(null); setResult(null); }}
+                  />
+                </Panel>
+              </div>
+
+              {/* ── Right column: report + charts ── */}
+              <div className="scenario-right">
                 <Panel
                   title="Analysis report"
                   info="Terminal-style summary of the run: KPIs, fiscal split, cash flow tape and warnings."
@@ -310,14 +337,23 @@ export default function App() {
                 >
                   <ReportConsole result={result} />
                 </Panel>
-                <Panel
-                  title="Cash flow projection"
-                  info="Monthly free cash flow over the horizon — bars below zero are CAPEX/loss months."
-                >
-                  <CashFlowChart result={result} />
-                </Panel>
+                <div className="chart-row">
+                  <Panel
+                    title="Cash flow projection"
+                    info="Monthly free cash flow over the horizon — bars below zero are CAPEX/loss months."
+                  >
+                    <CashFlowChart result={result} />
+                  </Panel>
+                  <Panel
+                    title="Production decline curve"
+                    info="Oil rate (bopd, solid) and water cut % (dashed) over the production horizon."
+                  >
+                    <DeclineCurveChart result={result} />
+                  </Panel>
+                </div>
               </div>
             </div>
+
             <Panel
               title="Upload data — CSV import & save/run"
               info="Bulk import scenarios from a CSV. Preview rows, edit, then Save & Run to persist them as cases."
